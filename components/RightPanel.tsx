@@ -312,17 +312,27 @@ const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<Backgr
 
 // ─── Video export ─────────────────────────────────────────────────────────────
 
-const VideoExportSection: React.FC = () => {
-  const [format, setFormat]       = useState<'webm' | 'mp4'>('webm');
-  const [duration, setDuration]   = useState(5);
-  const [pixelRatio, setPixelRatio] = useState<1|2|4>(2);
-  const [speed, setSpeed]         = useState<0.5|1>(1);
-  const [recording, setRecording] = useState(false);
-  const [progress, setProgress]   = useState(0);
+const VideoExportSection: React.FC<{ videoUrl?: string }> = ({ videoUrl }) => {
+  const [format, setFormat]           = useState<'webm' | 'mp4'>('mp4');
+  const [duration, setDuration]       = useState(5);
+  const [pixelRatio, setPixelRatio]   = useState<1|2|4>(2);
+  const [speed, setSpeed]             = useState<0.5|1>(1);
+  const [recording, setRecording]     = useState(false);
+  const [progress, setProgress]       = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const rafRef      = useRef<number>(0);
 
-  const start = () => {
+  // ── Direct download (no effects active) ───────────────────────────────────
+  const directDownload = () => {
+    if (!videoUrl) return;
+    const a = document.createElement('a');
+    a.href = videoUrl;
+    a.download = `herokit-background.${format}`;
+    a.click();
+  };
+
+  // ── Record composite (effects baked in) ───────────────────────────────────
+  const startRecord = () => {
     const container = document.getElementById('heroken-canvas') as HTMLElement | null;
     if (!container) return;
 
@@ -335,11 +345,9 @@ const VideoExportSection: React.FC = () => {
 
     const canvases = [...container.querySelectorAll('canvas')] as HTMLCanvasElement[];
     const vid = container.querySelector('video') as HTMLVideoElement | null;
-    const img = container.querySelector('img')  as HTMLImageElement | null;
     const bg  = container.style.backgroundColor || '#050508';
 
-    // Apply playback speed before recording
-    if (vid) vid.playbackRate = speed;
+    if (vid) { vid.playbackRate = speed; vid.play().catch(() => {}); }
 
     const candidates = format === 'mp4'
       ? ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
@@ -353,7 +361,7 @@ const VideoExportSection: React.FC = () => {
 
     recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
-      if (vid) vid.playbackRate = 1; // restore speed
+      if (vid) vid.playbackRate = 1;
       const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const blob = new Blob(chunks, { type: mimeType });
       const url  = URL.createObjectURL(blob);
@@ -373,10 +381,8 @@ const VideoExportSection: React.FC = () => {
       const elapsed = performance.now() - t0;
       if (elapsed >= total) { recorder.stop(); return; }
       setProgress((elapsed / total) * 100);
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, w, h);
-      if (vid)      try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
-      else if (img) try { ctx.drawImage(img, 0, 0, w, h); } catch {}
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+      if (vid) try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
       canvases.forEach(c => { try { ctx.drawImage(c, 0, 0, w, h); } catch {} });
       rafRef.current = requestAnimationFrame(render);
     };
@@ -386,92 +392,101 @@ const VideoExportSection: React.FC = () => {
   const cancel = () => {
     recorderRef.current?.stop();
     cancelAnimationFrame(rafRef.current);
-    // Restore video speed on cancel
     const vid = document.querySelector('#heroken-canvas video') as HTMLVideoElement | null;
     if (vid) vid.playbackRate = 1;
     setRecording(false); setProgress(0);
   };
 
+  const withEffects = hasActiveCanvasEffects();
+
   return (
     <div className="px-5 pb-4 space-y-3">
+
       {/* Format */}
       <div className="flex items-center gap-2">
         <Segment
-          options={[{ id: 'webm', label: 'WebM' }, { id: 'mp4', label: 'MP4' }]}
+          options={[{ id: 'mp4', label: 'MP4' }, { id: 'webm', label: 'WebM' }]}
           value={format}
           onChange={v => setFormat(v as 'webm' | 'mp4')}
         />
       </div>
 
-      {/* Duration */}
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
-        <div className="flex-1">
-          <Segment
-            options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]}
-            value={String(duration)}
-            onChange={v => setDuration(Number(v))}
-          />
+      {/* Duration + Speed + Resolution — only needed when recording with effects */}
+      {withEffects && (<>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
+          <div className="flex-1">
+            <Segment
+              options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]}
+              value={String(duration)} onChange={v => setDuration(Number(v))}
+            />
+          </div>
         </div>
-      </div>
-
-      {/* Speed */}
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Speed</span>
-        <div className="flex-1">
-          <Segment
-            options={[{ id:'0.5', label:'0.5×' }, { id:'1', label:'1×' }]}
-            value={String(speed)}
-            onChange={v => setSpeed(Number(v) as 0.5|1)}
-          />
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Speed</span>
+          <div className="flex-1">
+            <Segment
+              options={[{ id:'0.5', label:'0.5×' }, { id:'1', label:'1×' }]}
+              value={String(speed)} onChange={v => setSpeed(Number(v) as 0.5|1)}
+            />
+          </div>
         </div>
-      </div>
-
-      {/* Resolution */}
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
-        <div className="flex-1">
-          <Segment
-            options={[{ id:'1', label:'1×' }, { id:'2', label:'2×' }, { id:'4', label:'4×' }]}
-            value={String(pixelRatio)}
-            onChange={v => setPixelRatio(Number(v) as 1|2|4)}
-          />
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
+          <div className="flex-1">
+            <Segment
+              options={[{ id:'1', label:'1×' }, { id:'2', label:'2×' }, { id:'4', label:'4×' }]}
+              value={String(pixelRatio)} onChange={v => setPixelRatio(Number(v) as 1|2|4)}
+            />
+          </div>
         </div>
-      </div>
+      </>)}
 
-      {/* Progress / Record button */}
+      {/* Action button */}
       {recording ? (
         <div className="space-y-2">
           <div className="w-full h-1.5 bg-[#2a2a2a] rounded-full overflow-hidden">
             <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-[#888]">
-              Recording… {(progress * duration / 100).toFixed(1)}s / {duration}s
-            </span>
-            <button onClick={cancel} className="text-[10px] text-[#666] hover:text-[#999] transition-colors">
-              Cancel
-            </button>
+            <span className="text-[11px] text-[#888]">Recording… {(progress * duration / 100).toFixed(1)}s / {duration}s</span>
+            <button onClick={cancel} className="text-[10px] text-[#666] hover:text-[#999] transition-colors">Cancel</button>
           </div>
         </div>
-      ) : (
-        <button
-          onClick={start}
-          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg border border-[#2c2c2c] hover:border-[#444] bg-[#1a1a1a] hover:bg-[#222] text-white text-sm font-semibold transition-all"
-        >
+      ) : withEffects ? (
+        <button onClick={startRecord}
+          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg border border-[#2c2c2c] hover:border-[#444] bg-[#1a1a1a] hover:bg-[#222] text-white text-sm font-semibold transition-all">
           <i className="ph ph-record text-red-400 text-base" />
           Record & Export
         </button>
+      ) : (
+        <button onClick={directDownload}
+          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg bg-white text-black text-sm font-semibold hover:bg-gray-100 transition-all">
+          <i className="ph-bold ph-download-simple text-base" />
+          Download Video
+        </button>
       )}
 
-      <p className="text-[9px] text-[#333] leading-relaxed">
-        Captures video source, WebGL shaders & film grain. Vignette and pattern overlays not included.
+      <p className="text-[9px] text-[#444] leading-relaxed">
+        {withEffects
+          ? 'Records canvas composite — bakes in WebGL shaders & film grain. Vignette and pattern overlays not included.'
+          : 'Downloads your video directly. Add Effects (Fluid, Aurora, etc.) to bake them in via Record & Export.'}
       </p>
     </div>
   );
 };
 
 // ─── Panel ────────────────────────────────────────────────────────────────────
+
+// ─── Video Export section ─────────────────────────────────────────────────────
+// hasEffects = true when animated canvas layers are active (shaders, kinetic flow, etc.)
+// If false → we just download the source video directly (no re-encoding needed)
+const hasActiveCanvasEffects = (): boolean => {
+  const container = document.getElementById('heroken-canvas');
+  if (!container) return false;
+  // More than one canvas = effect canvases are present on top of the source
+  return container.querySelectorAll('canvas').length > 1;
+};
 
 interface RightPanelProps {
   state: BackgroundState;
@@ -654,7 +669,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
       {/* ── VIDEO EXPORT ────────────────────────────────────────────────── */}
       <SectionLabel>Video Export</SectionLabel>
-      <VideoExportSection />
+      <VideoExportSection videoUrl={state.videoUrl} />
 
       <Divider />
 

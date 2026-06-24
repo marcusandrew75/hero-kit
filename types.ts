@@ -21,7 +21,7 @@ export type ImageFilter = 'none' | 'grayscale' | 'desaturate' | 'tint' | 'duoton
 
 export type ImageMask = 'none' | 'fade-bottom' | 'fade-left' | 'fade-right' | 'radial' | 'soft-edges';
 
-export type DitherStyle = 'none' | 'bayer' | 'noise';
+export type DitherStyle = 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
 
 export type GenerativePreset = 'orbital' | 'particles' | 'matrix' | 'fluid-grid' | 'noise-field';
 

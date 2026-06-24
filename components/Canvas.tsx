@@ -866,6 +866,84 @@ const applyDispersion = (
   return new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
 };
 
+// ─── Canvas-based dithering ───────────────────────────────────────────────────
+// All three algorithms read actual pixel values so they export correctly.
+// Scale controls Bayer cell size (ordered) or quantisation levels (error diffusion).
+
+const BAYER_4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]] as const;
+
+const applyCanvasDither = (
+  data: Uint8ClampedArray, w: number, h: number,
+  style: 'bayer' | 'floyd-steinberg' | 'atkinson', scale: number,
+): Uint8ClampedArray => {
+  // Quantisation levels: scale 1→8 levels, scale 8→2 levels
+  const levels = Math.max(2, Math.round(10 - scale * 1.0));
+  const step   = 255 / (levels - 1);
+
+  // ── Bayer ordered dither ──────────────────────────────────────────────────
+  if (style === 'bayer') {
+    const out = new Uint8ClampedArray(data);
+    const cellSize = Math.max(1, scale);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i  = (y * w + x) * 4;
+        const mx = Math.floor(x / cellSize) % 4;
+        const my = Math.floor(y / cellSize) % 4;
+        const t  = (BAYER_4[my][mx] / 16 - 0.5) * step; // signed offset
+        for (let c = 0; c < 3; c++) {
+          out[i + c] = clamp(Math.round((data[i + c] + t) / step) * step);
+        }
+      }
+    }
+    return out;
+  }
+
+  // ── Error diffusion (Floyd-Steinberg and Atkinson) ────────────────────────
+  const buf = new Float32Array(w * h * 4);
+  for (let i = 0; i < data.length; i++) buf[i] = data[i];
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const old = Math.max(0, Math.min(255, buf[i + c]));
+        const nw  = Math.round(old / step) * step;
+        buf[i + c] = nw;
+        const err = old - nw;
+
+        if (style === 'floyd-steinberg') {
+          if (x + 1 < w)               buf[(y * w + x + 1) * 4 + c]       += err * 7 / 16;
+          if (y + 1 < h) {
+            if (x > 0)                  buf[((y+1)*w + x-1) * 4 + c]       += err * 3 / 16;
+                                        buf[((y+1)*w + x  ) * 4 + c]       += err * 5 / 16;
+            if (x + 1 < w)             buf[((y+1)*w + x+1) * 4 + c]       += err * 1 / 16;
+          }
+        } else {
+          // Atkinson — distributes 6/8 of error (creates lighter, more open look)
+          const e = err / 8;
+          if (x + 1 < w)               buf[(y * w + x + 1) * 4 + c]       += e;
+          if (x + 2 < w)               buf[(y * w + x + 2) * 4 + c]       += e;
+          if (y + 1 < h) {
+            if (x > 0)                  buf[((y+1)*w + x-1) * 4 + c]       += e;
+                                        buf[((y+1)*w + x  ) * 4 + c]       += e;
+            if (x + 1 < w)             buf[((y+1)*w + x+1) * 4 + c]       += e;
+          }
+          if (y + 2 < h)               buf[((y+2)*w + x  ) * 4 + c]       += e;
+        }
+      }
+    }
+  }
+
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    out[i]     = clamp(Math.round(buf[i]));
+    out[i + 1] = clamp(Math.round(buf[i + 1]));
+    out[i + 2] = clamp(Math.round(buf[i + 2]));
+    out[i + 3] = data[i + 3];
+  }
+  return out;
+};
+
 // ─── RGB Channel Smear ───────────────────────────────────────────────────────
 
 const sortOneChannel = (
@@ -1227,6 +1305,8 @@ interface ProcessedImageProps {
   warpOctaves: number;
   warpStyle: 'warp' | 'swirl' | 'flow';
   caStrength: number;
+  canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
+  canvasDitherScale: number;
   imageGlitchEnabled: boolean;
   imageGlitchStyle: GlitchStyle;
   imageGlitchIntensity: number;
@@ -1258,6 +1338,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
   const {
     imageUrl, colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
+    canvasDitherStyle, canvasDitherScale,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
     warpEnabled, warpStrength, warpScale, warpOctaves, warpStyle,
@@ -1309,6 +1390,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (warpEnabled)         processed = applyDisplacementWarp(processed, w, h, warpStrength, warpScale, warpOctaves, warpStyle);
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
+          if (canvasDitherStyle !== 'none') processed = applyCanvasDither(processed, w, h, canvasDitherStyle as 'bayer'|'floyd-steinberg'|'atkinson', canvasDitherScale);
           // CA last — applied over the fully processed image, strongest at corners
           if (caStrength > 0)      processed = applyCA(processed, w, h, caStrength);
           offCtx.putImageData(new ImageData(processed, w, h), 0, 0);
@@ -1345,7 +1427,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     ro.observe(wrap);
     return () => { cancelled = true; ro.disconnect(); };
   }, [imageUrl, colorGradeEnabled, colorGradePreset, colorGradeStrength,
-      caStrength,
+      caStrength, canvasDitherStyle, canvasDitherScale,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
       dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
       warpEnabled, warpStrength, warpScale, warpOctaves, warpStyle,
@@ -1636,6 +1718,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
 
   const useProcessedCanvas = !!imageUrl && (
     (chromaticAberration > 0) ||
+    (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
@@ -1651,7 +1734,6 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     else if (imageFilter === 'desaturate') parts.push('saturate(0%) opacity(0.6)');
     else if (imageFilter === 'tint' || imageFilter === 'duotone') parts.push('grayscale(100%)');
     else if (imageFilter === 'frosted') parts.push('blur(12px) contrast(1.2) brightness(1.1)');
-    if (ditherStyle !== 'none') parts.push(`contrast(${100 + 50 * 2}%)`);
     if (imageBlur > 0) parts.push(`blur(${imageBlur}px)`);
     return parts.join(' ');
   };
@@ -1687,13 +1769,6 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     return map[ambientLightPosition] || 'top right';
   };
 
-  // Dither overlay SVG
-  const ditherSvg = (): string => {
-    if (ditherStyle === 'bayer') return `data:image/svg+xml,%3Csvg width='4' height='4' viewBox='0 0 4 4' xmlns='http://www.w3.org/2000/svg'%3E%3Crect x='0' y='0' width='1' height='1' fill='black' fill-opacity='0'/%3E%3Crect x='1' y='0' width='1' height='1' fill='black' fill-opacity='0.53'/%3E%3Crect x='2' y='0' width='1' height='1' fill='black' fill-opacity='0.13'/%3E%3Crect x='3' y='0' width='1' height='1' fill='black' fill-opacity='0.67'/%3E%3Crect x='0' y='1' width='1' height='1' fill='black' fill-opacity='0.8'/%3E%3Crect x='1' y='1' width='1' height='1' fill='black' fill-opacity='0.27'/%3E%3Crect x='2' y='1' width='1' height='1' fill='black' fill-opacity='0.93'/%3E%3Crect x='3' y='1' width='1' height='1' fill='black' fill-opacity='0.4'/%3E%3Crect x='0' y='2' width='1' height='1' fill='black' fill-opacity='0.2'/%3E%3Crect x='1' y='2' width='1' height='1' fill='black' fill-opacity='0.73'/%3E%3Crect x='2' y='2' width='1' height='1' fill='black' fill-opacity='0.07'/%3E%3Crect x='3' y='2' width='1' height='1' fill='black' fill-opacity='0.6'/%3E%3Crect x='0' y='3' width='1' height='1' fill='black' fill-opacity='1'/%3E%3Crect x='1' y='3' width='1' height='1' fill='black' fill-opacity='0.47'/%3E%3Crect x='2' y='3' width='1' height='1' fill='black' fill-opacity='0.87'/%3E%3Crect x='3' y='3' width='1' height='1' fill='black' fill-opacity='0.33'/%3E%3C/svg%3E`;
-    if (ditherStyle === 'noise') return `data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.95' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E`;
-    return '';
-  };
-
   const noiseSvg = `data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='nf'%3E%3CfeTurbulence type='turbulence' baseFrequency='0.95' numOctaves='1' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23nf)' opacity='1'/%3E%3C/svg%3E`;
 
   const maskStyle = imageMask !== 'none' ? { maskImage: maskImageCss(), WebkitMaskImage: maskImageCss() } : {};
@@ -1718,6 +1793,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 colorGradePreset={(colorGradePreset ?? 'teal-orange') as GradePreset}
                 colorGradeStrength={colorGradeStrength ?? 1}
                 caStrength={chromaticAberration ?? 0}
+                canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson')}
+                canvasDitherScale={ditherScale ?? 4}
                 imageGlitchEnabled={imageGlitchEnabled ?? false}
                 imageGlitchStyle={(imageGlitchStyle ?? 'digital') as GlitchStyle}
                 imageGlitchIntensity={imageGlitchIntensity ?? 40}
@@ -1764,10 +1841,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
               <div className="absolute inset-0 mix-blend-overlay" style={{ backgroundColor: 'rgba(255,255,255,0.3)' }} />
             )}
 
-            {/* Dither overlay */}
-            {ditherStyle !== 'none' && (
-              <div className="absolute inset-0 z-10 pointer-events-none mix-blend-hard-light" style={{ backgroundImage: `url("${ditherSvg()}")`, backgroundSize: `${(ditherScale || 1) * 4}px`, imageRendering: 'pixelated', backgroundRepeat: 'repeat' }} />
-            )}
+            {/* Dithering is now canvas-based in ProcessedImageCanvas — no CSS overlay */}
           </div>
         </div>
       )}

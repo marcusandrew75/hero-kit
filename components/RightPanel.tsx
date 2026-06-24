@@ -1145,15 +1145,20 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           onChange={v => set({ chromaticAberration: v })} />
       </Row>
 
-      <Row label="Dither">
-        <div className="flex-1">
-          <Segment
-            options={[{ id:'none', label:'Off' }, { id:'bayer', label:'Bayer' }, { id:'noise', label:'Noise' }]}
-            value={state.ditherStyle}
-            onChange={v => set({ ditherStyle: v as DitherStyle })}
-          />
+      <Block label="Dither">
+        <div className="grid grid-cols-4 gap-1.5">
+          {([
+            { id: 'none',            label: 'Off'      },
+            { id: 'bayer',           label: 'Bayer'    },
+            { id: 'floyd-steinberg', label: 'F-S'      },
+            { id: 'atkinson',        label: 'Atkinson' },
+          ] as const).map(d => (
+            <Chip key={d.id} label={d.label}
+              active={state.ditherStyle === d.id}
+              onClick={() => set({ ditherStyle: d.id })} />
+          ))}
         </div>
-      </Row>
+      </Block>
       {state.ditherStyle !== 'none' && (
         <Row label="Scale">
           <Slider value={state.ditherScale} min={1} max={8} onChange={v => set({ ditherScale: v })} />

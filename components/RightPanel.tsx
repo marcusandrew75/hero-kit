@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { toPng, toJpeg } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
 import {
@@ -310,6 +310,137 @@ const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<Backgr
   );
 };
 
+// ─── Video export ─────────────────────────────────────────────────────────────
+
+const VideoExportSection: React.FC = () => {
+  const [format, setFormat]       = useState<'webm' | 'mp4'>('webm');
+  const [duration, setDuration]   = useState(5);
+  const [recording, setRecording] = useState(false);
+  const [progress, setProgress]   = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const rafRef      = useRef<number>(0);
+
+  const start = () => {
+    const container = document.getElementById('heroken-canvas') as HTMLElement | null;
+    if (!container) return;
+
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+
+    // Composite canvas — we draw into this each frame and stream it
+    const rec = document.createElement('canvas');
+    rec.width = w; rec.height = h;
+    const ctx = rec.getContext('2d')!;
+
+    // Collect source elements inside the canvas container
+    const canvases = [...container.querySelectorAll('canvas')] as HTMLCanvasElement[];
+    const vid = container.querySelector('video') as HTMLVideoElement | null;
+    const img = container.querySelector('img')  as HTMLImageElement | null;
+    const bg  = container.style.backgroundColor || '#050508';
+
+    // Pick best supported mime type
+    const candidates = format === 'mp4'
+      ? ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+      : ['video/webm;codecs=vp9', 'video/webm'];
+    const mimeType = candidates.find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
+
+    const stream   = rec.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+    recorderRef.current = recorder;
+    const chunks: Blob[] = [];
+
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: mimeType });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.download = `herokit-background.${ext}`;
+      a.href = url; a.click();
+      URL.revokeObjectURL(url);
+      setRecording(false); setProgress(0);
+    };
+
+    setRecording(true);
+    recorder.start(100);
+    const t0 = performance.now();
+    const total = duration * 1000;
+
+    const render = () => {
+      const elapsed = performance.now() - t0;
+      if (elapsed >= total) { recorder.stop(); return; }
+
+      setProgress((elapsed / total) * 100);
+
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+      if (vid) try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
+      else if (img) try { ctx.drawImage(img, 0, 0, w, h); } catch {}
+      canvases.forEach(c => { try { ctx.drawImage(c, 0, 0, w, h); } catch {} });
+
+      rafRef.current = requestAnimationFrame(render);
+    };
+    render();
+  };
+
+  const cancel = () => {
+    recorderRef.current?.stop();
+    cancelAnimationFrame(rafRef.current);
+    setRecording(false); setProgress(0);
+  };
+
+  return (
+    <div className="px-5 pb-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Segment
+          options={[{ id: 'webm', label: 'WebM' }, { id: 'mp4', label: 'MP4' }]}
+          value={format}
+          onChange={v => setFormat(v as 'webm' | 'mp4')}
+        />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
+        <div className="flex-1">
+          <Segment
+            options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]}
+            value={String(duration)}
+            onChange={v => setDuration(Number(v))}
+          />
+        </div>
+      </div>
+
+      {recording ? (
+        <div className="space-y-2">
+          <div className="w-full h-1.5 bg-[#2a2a2a] rounded-full overflow-hidden">
+            <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-[#888]">
+              Recording… {(progress * duration / 100).toFixed(1)}s / {duration}s
+            </span>
+            <button onClick={cancel} className="text-[10px] text-[#666] hover:text-[#999] transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={start}
+          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg border border-[#2c2c2c] hover:border-[#444] bg-[#1a1a1a] hover:bg-[#222] text-white text-sm font-semibold transition-all"
+        >
+          <i className="ph ph-record text-red-400 text-base" />
+          Record & Export
+        </button>
+      )}
+
+      <p className="text-[9px] text-[#333] leading-relaxed">
+        Captures video source, WebGL shaders & film grain. Vignette and pattern overlays are not included in the recording.
+      </p>
+    </div>
+  );
+};
+
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 interface RightPanelProps {
@@ -488,6 +619,12 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </div>
         </div>
       </div>
+
+      <Divider />
+
+      {/* ── VIDEO EXPORT ────────────────────────────────────────────────── */}
+      <SectionLabel>Video Export</SectionLabel>
+      <VideoExportSection />
 
       <Divider />
 

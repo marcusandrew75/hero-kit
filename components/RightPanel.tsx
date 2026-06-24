@@ -400,7 +400,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-[#222] shrink-0">
         <div className="flex items-center gap-2">
-          <i className="ph ph-aperture text-white/70 text-lg" />
+          <img src="/herokit_logomark_light.png" alt="" className="w-5 h-5 object-contain" />
           <span className="text-sm font-semibold text-white tracking-wide">HeroKit</span>
         </div>
         <div className="flex items-center gap-1">

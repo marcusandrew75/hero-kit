@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
 import PreviewOverlay, { PreviewLayout } from './components/PreviewOverlay';
@@ -368,6 +369,9 @@ const App: React.FC = () => {
           onClose={() => setShowLooks(false)}
         />
       )}
+
+      {/* Vercel Analytics */}
+      <Analytics />
     </div>
   );
 };

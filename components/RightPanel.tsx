@@ -5,7 +5,7 @@ import SpotBlurMap from './SpotBlurMap';
 import {
   BackgroundState, AtmosphereStyle, PatternStyle, ImageFilter,
   ImageMask, DitherStyle, GenerativePreset, ExportFormat, ExportResolution,
-  AmbientPosition,
+  AmbientPosition, ImageLayer, LayerBlendMode,
 } from '../types';
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -480,6 +480,113 @@ const VideoExportSection: React.FC<{ videoUrl?: string; state: BackgroundState }
   );
 };
 
+// ─── Layers ───────────────────────────────────────────────────────────────────
+
+const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
+  { id: 'screen',     label: 'Screen'    },
+  { id: 'multiply',   label: 'Multiply'  },
+  { id: 'overlay',    label: 'Overlay'   },
+  { id: 'soft-light', label: 'Soft'      },
+  { id: 'difference', label: 'Differ.'   },
+  { id: 'luminosity', label: 'Luminosity'},
+];
+
+const LayersSection: React.FC<{
+  layers: ImageLayer[];
+  onChange: (layers: ImageLayer[]) => void;
+}> = ({ layers, onChange }) => {
+
+  const addLayer = () => {
+    if (layers.length >= 2) return;
+    onChange([...layers, {
+      id: crypto.randomUUID(),
+      blendMode: 'screen',
+      opacity: 0.8,
+    }]);
+  };
+
+  const updateLayer = (id: string, patch: Partial<ImageLayer>) => {
+    onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
+  };
+
+  const removeLayer = (id: string) => {
+    onChange(layers.filter(l => l.id !== id));
+  };
+
+  const handleUpload = (id: string, file: File) => {
+    const r = new FileReader();
+    r.onload = e => updateLayer(id, { imageUrl: e.target?.result as string });
+    r.readAsDataURL(file);
+  };
+
+  return (
+    <div className="px-5 pb-3 space-y-3">
+      {/* Existing layers */}
+      {layers.map((layer, i) => (
+        <div key={layer.id} className="rounded-xl border border-[#252525] bg-[#111] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e1e1e]">
+            <span className="text-[11px] font-semibold text-[#888]">Layer {i + 2}</span>
+            <button onClick={() => removeLayer(layer.id)}
+              className="text-[#444] hover:text-red-400 transition-colors">
+              <i className="ph ph-x text-sm" />
+            </button>
+          </div>
+
+          <div className="p-3 space-y-2.5">
+            {/* Image source */}
+            {layer.imageUrl ? (
+              <div className="relative rounded-lg overflow-hidden h-20">
+                <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
+                <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
+                  <span className="text-[10px] text-white font-medium">Change</span>
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(layer.id, f); }} />
+                </label>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center gap-1 h-16 rounded-lg border border-dashed border-[#2a2a2a] cursor-pointer hover:border-[#444] transition-colors text-[#444] hover:text-[#888]">
+                <i className="ph ph-upload-simple text-base" />
+                <span className="text-[10px]">Upload image</span>
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(layer.id, f); }} />
+              </label>
+            )}
+
+            {/* Blend mode */}
+            <div>
+              <p className="text-[10px] text-[#555] mb-1.5">Blend</p>
+              <div className="grid grid-cols-3 gap-1">
+                {BLEND_MODES.map(m => (
+                  <Chip key={m.id} label={m.label}
+                    active={layer.blendMode === m.id}
+                    onClick={() => updateLayer(layer.id, { blendMode: m.id })} />
+                ))}
+              </div>
+            </div>
+
+            {/* Opacity */}
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-[#777] shrink-0 w-[52px]">Opacity</span>
+              <Slider value={Math.round(layer.opacity * 100)} min={1} max={100}
+                onChange={v => updateLayer(layer.id, { opacity: v / 100 })} />
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* Add layer button */}
+      {layers.length < 2 && (
+        <button onClick={addLayer}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#2a2a2a] text-[#555] hover:text-[#999] hover:border-[#444] transition-all text-[11px] font-medium">
+          <i className="ph ph-plus text-sm" />
+          Add Layer {layers.length + 2}
+        </button>
+      )}
+    </div>
+  );
+};
+
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 // ─── Video Export section ─────────────────────────────────────────────────────
@@ -673,6 +780,16 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
       {/* VIDEO EXPORT — hidden in v1, re-enable when video pipeline is solid */}
       {false && <><SectionLabel>Video Export</SectionLabel><VideoExportSection videoUrl={state.videoUrl} state={state} /><Divider /></>}
+
+      {/* ── LAYERS ──────────────────────────────────────────────────────── */}
+      {hasSource && (<>
+        <SectionLabel>Layers</SectionLabel>
+        <LayersSection
+          layers={state.layers ?? []}
+          onChange={layers => set({ layers })}
+        />
+        <Divider />
+      </>)}
 
       {/* ── BACKGROUND ──────────────────────────────────────────────────── */}
       <SectionLabel>Background</SectionLabel>

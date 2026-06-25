@@ -111,6 +111,9 @@ export interface BackgroundState {
   pixelSortDirection: 'up' | 'down' | 'left' | 'right';
   pixelSortMode: 'brightness' | 'hue' | 'saturation';
 
+  // Image layers (composited on top of primary imageUrl)
+  layers: ImageLayer[];
+
   // Dispersion
   dispersionEnabled: boolean;
   dispersionStrength: number;    // how far particles scatter (px)
@@ -148,6 +151,15 @@ export interface BackgroundState {
   spotBlurEnabled: boolean;
   spotBlurRadius: number;        // background blur px (5–40)
   blurSpots: BlurSpot[];
+}
+
+export type LayerBlendMode = 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'difference' | 'luminosity';
+
+export interface ImageLayer {
+  id: string;
+  imageUrl?: string;
+  blendMode: LayerBlendMode;
+  opacity: number; // 0–1
 }
 
 export interface BlurSpot {

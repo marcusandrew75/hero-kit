@@ -1304,6 +1304,7 @@ interface ProcessedImageProps {
   warpScale: number;
   warpOctaves: number;
   warpStyle: 'warp' | 'swirl' | 'flow';
+  layers: import('../types').ImageLayer[];
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
   canvasDitherScale: number;
@@ -1336,7 +1337,8 @@ interface ProcessedImageProps {
 
 const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
   const {
-    imageUrl, colorGradeEnabled, colorGradePreset, colorGradeStrength,
+    imageUrl, layers,
+    colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -1358,14 +1360,19 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     if (!canvas || !wrap || !imageUrl) return;
     let cancelled = false;
 
+    const loadImg = (url: string) => new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image(); i.crossOrigin = 'anonymous';
+      i.onload = () => res(i); i.onerror = rej; i.src = url;
+    });
+
     const render = () => {
       const w = wrap.clientWidth  || window.innerWidth;
       const h = wrap.clientHeight || window.innerHeight;
-      const img = new Image();
-      // crossOrigin must be set BEFORE src — required for Pexels/external URLs
-      // so getImageData() doesn't throw a CORS SecurityError and freeze on "Processing…"
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
+
+      // Load primary image + all layer images concurrently
+      const layerUrls = layers.filter(l => l.imageUrl).map(l => l.imageUrl!);
+      Promise.all([loadImg(imageUrl), ...layerUrls.map(loadImg)])
+        .then(([img, ...layerImgs]) => {
         if (cancelled) return;
         setProcessing(true);
 
@@ -1375,11 +1382,21 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           canvas.width = w; canvas.height = h;
           const ctx = canvas.getContext('2d')!;
 
-          // Step 1: draw source image (object-cover) to offscreen
+          // Step 1: composite primary + additional layers onto offscreen canvas
           const off = document.createElement('canvas');
           off.width = w; off.height = h;
           const offCtx = off.getContext('2d')!;
           drawObjectCover(offCtx, img, w, h);
+
+          // Blend additional layers on top
+          layers.filter(l => l.imageUrl).forEach((layer, i) => {
+            if (!layerImgs[i]) return;
+            offCtx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
+            offCtx.globalAlpha = layer.opacity;
+            drawObjectCover(offCtx, layerImgs[i], w, h);
+          });
+          offCtx.globalCompositeOperation = 'source-over';
+          offCtx.globalAlpha = 1;
 
           // Step 2: per-pixel transforms (grade + sort)
           let { data } = offCtx.getImageData(0, 0, w, h);
@@ -1409,24 +1426,23 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           ctx.drawImage(current, 0, 0);
           setProcessing(false);
           } catch (err) {
-            // CORS / SecurityError — fall back to displaying raw image
-            console.warn('ProcessedImageCanvas: pixel read blocked, showing raw image.', err);
+            console.warn('ProcessedImageCanvas error:', err);
             canvas.width = w; canvas.height = h;
             const ctx2 = canvas.getContext('2d')!;
             drawObjectCover(ctx2, img, w, h);
             setProcessing(false);
           }
         }, 0);
-      };
-      img.onerror = () => setProcessing(false);
-      img.src = imageUrl;
+      }).catch(() => setProcessing(false));
     };
 
     render();
     const ro = new ResizeObserver(render);
     ro.observe(wrap);
     return () => { cancelled = true; ro.disconnect(); };
-  }, [imageUrl, colorGradeEnabled, colorGradePreset, colorGradeStrength,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageUrl, JSON.stringify(layers),
+      colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
       dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -1696,6 +1712,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     vignetteStrength,
     effectsOpacity,
     halftoneEnabled, halftoneDotSize, halftoneSpacing, halftoneColor, halftoneInvert,
+    layers,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -1717,6 +1734,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
   }
 
   const useProcessedCanvas = !!imageUrl && (
+    (layers.some(l => l.imageUrl)) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -1792,6 +1810,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 colorGradeEnabled={colorGradeEnabled ?? false}
                 colorGradePreset={(colorGradePreset ?? 'teal-orange') as GradePreset}
                 colorGradeStrength={colorGradeStrength ?? 1}
+                layers={layers ?? []}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson')}
                 canvasDitherScale={ditherScale ?? 4}

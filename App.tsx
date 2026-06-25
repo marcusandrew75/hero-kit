@@ -60,6 +60,7 @@ const DEFAULT: BackgroundState = {
   pixelSortThreshold: 128,
   pixelSortDirection: 'up',
   pixelSortMode: 'brightness',
+  layers: [],
   dispersionEnabled: false,
   dispersionStrength: 80,
   dispersionThreshold: 140,

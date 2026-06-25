@@ -483,99 +483,198 @@ const VideoExportSection: React.FC<{ videoUrl?: string; state: BackgroundState }
 // ─── Layers ───────────────────────────────────────────────────────────────────
 
 const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
-  { id: 'screen',     label: 'Screen'    },
-  { id: 'multiply',   label: 'Multiply'  },
-  { id: 'overlay',    label: 'Overlay'   },
-  { id: 'soft-light', label: 'Soft'      },
-  { id: 'difference', label: 'Differ.'   },
+  { id: 'screen',     label: 'Screen'   },
+  { id: 'multiply',   label: 'Multiply' },
+  { id: 'overlay',    label: 'Overlay'  },
+  { id: 'soft-light', label: 'Soft'     },
+  { id: 'difference', label: 'Differ.'  },
   { id: 'luminosity', label: 'Luminosity'},
 ];
+
+const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
+
+const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) => {
+  const [tab, setTab]       = useState<'curated' | 'pexels'>('curated');
+  const [query, setQuery]   = useState('');
+  const [results, setResults] = useState<{ id: number; src: { small: string; large2x: string } }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const PEXELS_KEY = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
+
+  const searchPexels = async (q: string) => {
+    if (!q.trim() || !PEXELS_KEY) return;
+    setSearching(true);
+    try {
+      const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=12&orientation=landscape`, { headers: { Authorization: PEXELS_KEY } });
+      const data = await res.json();
+      setResults(data.photos ?? []);
+    } catch {} finally { setSearching(false); }
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Tab */}
+      <div className="flex bg-[#1c1c1c] rounded-md p-[3px] border border-[#2a2a2a] gap-[2px]">
+        {(['curated', 'pexels'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-[5px] text-[10px] font-medium rounded-[4px] transition-all ${tab === t ? 'bg-white text-black' : 'text-[#666] hover:text-[#aaa]'}`}>
+            {t === 'curated' ? 'Gallery' : 'Pexels'}
+          </button>
+        ))}
+      </div>
+
+      {/* Upload always available */}
+      <label className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg border border-dashed border-[#2a2a2a] cursor-pointer hover:border-[#444] text-[#555] hover:text-[#888] transition-colors text-[10px]">
+        <i className="ph ph-upload-simple text-sm" /> Upload image
+        <input type="file" accept="image/*" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onPick(ev.target?.result as string); r.readAsDataURL(f); }} />
+      </label>
+
+      {/* Curated gallery */}
+      {tab === 'curated' && (
+        <div className="grid grid-cols-4 gap-1">
+          {GALLERY.slice(0, 8).map(item => (
+            <button key={item.src} onClick={() => onPick(item.src)}
+              className="aspect-square overflow-hidden rounded-md border border-transparent hover:border-white/30 transition-all">
+              <img src={item.thumb} alt="" width={48} height={48} className="w-full h-full object-cover" loading="eager" decoding="async" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Pexels search */}
+      {tab === 'pexels' && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1">
+            {PEXELS_QUICK.map(q => (
+              <button key={q} onClick={() => { setQuery(q); searchPexels(q); }}
+                className="px-2 py-0.5 text-[9px] rounded-full border border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#999] transition-all">{q}</button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <input value={query} onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && searchPexels(query)}
+              placeholder="Search Pexels…"
+              className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-[10px] text-white placeholder-[#444] outline-none focus:border-[#444]" />
+            <button onClick={() => searchPexels(query)} disabled={searching}
+              className="px-2.5 py-1.5 bg-white text-black text-[9px] font-bold rounded-lg disabled:opacity-40">
+              {searching ? '…' : 'Go'}
+            </button>
+          </div>
+          {results.length > 0 && (
+            <div className="grid grid-cols-4 gap-1">
+              {results.map(p => (
+                <button key={p.id} onClick={() => onPick(p.src.large2x)}
+                  className="aspect-square overflow-hidden rounded-md border border-transparent hover:border-white/30 transition-all">
+                  <img src={p.src.small} alt="" width={48} height={48} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const LayersSection: React.FC<{
   layers: ImageLayer[];
   onChange: (layers: ImageLayer[]) => void;
 }> = ({ layers, onChange }) => {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const addLayer = () => {
     if (layers.length >= 2) return;
-    onChange([...layers, {
-      id: crypto.randomUUID(),
-      blendMode: 'screen',
-      opacity: 0.8,
-    }]);
+    const id = crypto.randomUUID();
+    onChange([...layers, { id, blendMode: 'screen', opacity: 0.8 }]);
+    setCollapsed(prev => ({ ...prev, [id]: false }));
   };
 
-  const updateLayer = (id: string, patch: Partial<ImageLayer>) => {
-    onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
-  };
-
-  const removeLayer = (id: string) => {
-    onChange(layers.filter(l => l.id !== id));
-  };
-
-  const handleUpload = (id: string, file: File) => {
-    const r = new FileReader();
-    r.onload = e => updateLayer(id, { imageUrl: e.target?.result as string });
-    r.readAsDataURL(file);
-  };
+  const update  = (id: string, patch: Partial<ImageLayer>) => onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
+  const remove  = (id: string) => onChange(layers.filter(l => l.id !== id));
+  const toggle  = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <div className="px-5 pb-3 space-y-3">
-      {/* Existing layers */}
-      {layers.map((layer, i) => (
-        <div key={layer.id} className="rounded-xl border border-[#252525] bg-[#111] overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e1e1e]">
-            <span className="text-[11px] font-semibold text-[#888]">Layer {i + 2}</span>
-            <button onClick={() => removeLayer(layer.id)}
-              className="text-[#444] hover:text-red-400 transition-colors">
-              <i className="ph ph-x text-sm" />
-            </button>
-          </div>
+    <div className="px-5 pb-3 space-y-2.5">
+      {layers.map((layer, i) => {
+        const isCollapsed = !!collapsed[layer.id];
+        const label = BLEND_MODES.find(m => m.id === layer.blendMode)?.label ?? layer.blendMode;
 
-          <div className="p-3 space-y-2.5">
-            {/* Image source */}
-            {layer.imageUrl ? (
-              <div className="relative rounded-lg overflow-hidden h-20">
-                <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
-                <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer">
-                  <span className="text-[10px] text-white font-medium">Change</span>
-                  <input type="file" accept="image/*" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(layer.id, f); }} />
-                </label>
+        return (
+          <div key={layer.id} className="rounded-xl border border-[#252525] bg-[#111] overflow-hidden">
+
+            {/* Header — always visible */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1e1e1e]">
+              {/* Thumbnail when collapsed */}
+              {isCollapsed && layer.imageUrl && (
+                <div className="w-8 h-8 rounded overflow-hidden shrink-0">
+                  <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
+                </div>
+              )}
+              <span className="text-[11px] font-semibold text-[#888] flex-1">
+                Layer {i + 2}
+                {isCollapsed && layer.imageUrl && (
+                  <span className="text-[#555] font-normal"> · {label} {Math.round(layer.opacity * 100)}%</span>
+                )}
+              </span>
+              {/* Hide / Show */}
+              {layer.imageUrl && (
+                <button onClick={() => toggle(layer.id)}
+                  className="text-[10px] text-[#555] hover:text-[#999] transition-colors px-1">
+                  {isCollapsed ? 'Show' : 'Hide'}
+                </button>
+              )}
+              {/* Delete */}
+              <button onClick={() => remove(layer.id)}
+                className="text-[#444] hover:text-red-400 transition-colors ml-1">
+                <i className="ph ph-x text-sm" />
+              </button>
+            </div>
+
+            {/* Collapsible body */}
+            {!isCollapsed && (
+              <div className="p-3 space-y-3">
+                {/* Image picker — gallery + Pexels */}
+                {layer.imageUrl ? (
+                  <div className="relative rounded-lg overflow-hidden h-20 group">
+                    <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium hover:bg-white/30 transition-colors">
+                        Change
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => update(layer.id, { imageUrl: ev.target?.result as string }); r.readAsDataURL(f); }} />
+                      </label>
+                      <button onClick={() => update(layer.id, { imageUrl: undefined })}
+                        className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium hover:bg-white/30 transition-colors">
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <LayerPicker onPick={url => { update(layer.id, { imageUrl: url }); setCollapsed(prev => ({ ...prev, [layer.id]: true })); }} />
+                )}
+
+                {/* Blend mode */}
+                <div>
+                  <p className="text-[10px] text-[#555] mb-1.5">Blend</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    {BLEND_MODES.map(m => (
+                      <Chip key={m.id} label={m.label} active={layer.blendMode === m.id} onClick={() => update(layer.id, { blendMode: m.id })} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Opacity */}
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-[#777] shrink-0 w-[52px]">Opacity</span>
+                  <Slider value={Math.round(layer.opacity * 100)} min={1} max={100}
+                    onChange={v => update(layer.id, { opacity: v / 100 })} />
+                </div>
               </div>
-            ) : (
-              <label className="flex flex-col items-center justify-center gap-1 h-16 rounded-lg border border-dashed border-[#2a2a2a] cursor-pointer hover:border-[#444] transition-colors text-[#444] hover:text-[#888]">
-                <i className="ph ph-upload-simple text-base" />
-                <span className="text-[10px]">Upload image</span>
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(layer.id, f); }} />
-              </label>
             )}
-
-            {/* Blend mode */}
-            <div>
-              <p className="text-[10px] text-[#555] mb-1.5">Blend</p>
-              <div className="grid grid-cols-3 gap-1">
-                {BLEND_MODES.map(m => (
-                  <Chip key={m.id} label={m.label}
-                    active={layer.blendMode === m.id}
-                    onClick={() => updateLayer(layer.id, { blendMode: m.id })} />
-                ))}
-              </div>
-            </div>
-
-            {/* Opacity */}
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-[#777] shrink-0 w-[52px]">Opacity</span>
-              <Slider value={Math.round(layer.opacity * 100)} min={1} max={100}
-                onChange={v => updateLayer(layer.id, { opacity: v / 100 })} />
-            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
-      {/* Add layer button */}
       {layers.length < 2 && (
         <button onClick={addLayer}
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#2a2a2a] text-[#555] hover:text-[#999] hover:border-[#444] transition-all text-[11px] font-medium">
@@ -735,35 +834,23 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         )}
       </div>
 
-      {/* ── GALLERY ─────────────────────────────────────────────────────── */}
-      <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
-
-      <Divider />
-
-      {/* ── IMAGE EXPORT ────────────────────────────────────────────────── */}
+      {/* ── IMAGE EXPORT — moved above gallery for quick access ─────────── */}
       <SectionLabel>Image Export</SectionLabel>
 
       <div className="px-5 pb-5 space-y-3">
-        {/* Format selector — full-width, large */}
         <Segment
           options={[{ id: 'PNG', label: 'PNG' }, { id: 'WebP', label: 'WebP' }, { id: 'JPG', label: 'JPG' }]}
           value={format}
           onChange={v => setFormat(v as ExportFormat)}
         />
-
-        {/* Export button — full width, prominent */}
         <button
           onClick={handleExport}
           disabled={exporting}
           className="w-full flex items-center justify-center gap-2 py-[10px] bg-white text-black text-sm font-semibold rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors disabled:opacity-40"
         >
-          {exporting
-            ? <i className="ph ph-spinner animate-spin text-base" />
-            : <i className="ph-bold ph-download-simple text-base" />}
+          {exporting ? <i className="ph ph-spinner animate-spin text-base" /> : <i className="ph-bold ph-download-simple text-base" />}
           {exporting ? 'Exporting…' : 'Export'}
         </button>
-
-        {/* Resolution */}
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
           <div className="flex-1">
@@ -775,6 +862,11 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </div>
         </div>
       </div>
+
+      <Divider />
+
+      {/* ── GALLERY ─────────────────────────────────────────────────────── */}
+      <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
 
       <Divider />
 

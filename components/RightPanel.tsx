@@ -312,42 +312,56 @@ const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<Backgr
 
 // ─── Video export ─────────────────────────────────────────────────────────────
 
-const VideoExportSection: React.FC<{ videoUrl?: string }> = ({ videoUrl }) => {
-  const [format, setFormat]           = useState<'webm' | 'mp4'>('mp4');
-  const [duration, setDuration]       = useState(5);
-  const [pixelRatio, setPixelRatio]   = useState<1|2|4>(2);
-  const [speed, setSpeed]             = useState<0.5|1>(1);
-  const [recording, setRecording]     = useState(false);
-  const [progress, setProgress]       = useState(0);
+const VideoExportSection: React.FC<{ videoUrl?: string; state: BackgroundState }> = ({ videoUrl, state }) => {
+  const [format, setFormat]         = useState<'mp4' | 'webm'>('mp4');
+  const [duration, setDuration]     = useState(5);
+  const [pixelRatio, setPixelRatio] = useState<1|2|4>(2);
+  const [speed, setSpeed]           = useState<0.5|1>(1);
+  const [exporting, setExporting]   = useState(false);
+  const [progress, setProgress]     = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const rafRef      = useRef<number>(0);
 
-  // ── Direct download (no effects active) ───────────────────────────────────
-  const directDownload = () => {
-    if (!videoUrl) return;
-    const a = document.createElement('a');
-    a.href = videoUrl;
-    a.download = `herokit-background.${format}`;
-    a.click();
-  };
-
-  // ── Record composite (effects baked in) ───────────────────────────────────
-  const startRecord = () => {
+  const exportVideo = async () => {
     const container = document.getElementById('heroken-canvas') as HTMLElement | null;
-    if (!container) return;
+    const vid = container?.querySelector('video') as HTMLVideoElement | null;
+    if (!vid) return;
 
-    const w = container.clientWidth  * pixelRatio;
-    const h = container.clientHeight * pixelRatio;
+    const w = container!.clientWidth  * pixelRatio;
+    const h = container!.clientHeight * pixelRatio;
+
+    vid.playbackRate = speed;
+    if (vid.paused) {
+      await new Promise<void>(res => {
+        vid.addEventListener('playing', () => res(), { once: true });
+        vid.play().catch(() => res());
+        setTimeout(res, 800);
+      });
+    }
+    await new Promise(r => setTimeout(r, 120));
 
     const rec = document.createElement('canvas');
     rec.width = w; rec.height = h;
     const ctx = rec.getContext('2d')!;
 
-    const canvases = [...container.querySelectorAll('canvas')] as HTMLCanvasElement[];
-    const vid = container.querySelector('video') as HTMLVideoElement | null;
-    const bg  = container.style.backgroundColor || '#050508';
+    const GW = Math.min(512, w), GH = Math.min(512, h);
+    const gCanvas = document.createElement('canvas');
+    gCanvas.width = GW; gCanvas.height = GH;
+    const gCtx = gCanvas.getContext('2d')!;
+    const gImg = gCtx.createImageData(GW, GH);
+    const nhex = (state.noiseColor || '#ffffff').replace('#', '');
+    const nr = parseInt(nhex.slice(0, 2), 16) || 255;
+    const ng = parseInt(nhex.slice(2, 4), 16) || 255;
+    const nb = parseInt(nhex.slice(4, 6), 16) || 255;
 
-    if (vid) { vid.playbackRate = speed; vid.play().catch(() => {}); }
+    const refreshGrain = () => {
+      for (let i = 0; i < gImg.data.length; i += 4) {
+        const v = Math.random() > 0.65 ? ((Math.random() - 0.65) / 0.35) * 255 : 0;
+        gImg.data[i] = nr; gImg.data[i+1] = ng; gImg.data[i+2] = nb; gImg.data[i+3] = v | 0;
+      }
+      gCtx.putImageData(gImg, 0, 0);
+    };
+    refreshGrain();
 
     const candidates = format === 'mp4'
       ? ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
@@ -361,7 +375,7 @@ const VideoExportSection: React.FC<{ videoUrl?: string }> = ({ videoUrl }) => {
 
     recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
-      if (vid) vid.playbackRate = 1;
+      vid.playbackRate = 1;
       const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const blob = new Blob(chunks, { type: mimeType });
       const url  = URL.createObjectURL(blob);
@@ -369,21 +383,49 @@ const VideoExportSection: React.FC<{ videoUrl?: string }> = ({ videoUrl }) => {
       a.download = `herokit-background.${ext}`;
       a.href = url; a.click();
       URL.revokeObjectURL(url);
-      setRecording(false); setProgress(0);
+      setExporting(false); setProgress(0);
     };
 
-    setRecording(true);
+    setExporting(true);
     recorder.start(100);
     const t0 = performance.now();
     const total = duration * 1000;
+    let grainTick = 0;
 
     const render = () => {
       const elapsed = performance.now() - t0;
       if (elapsed >= total) { recorder.stop(); return; }
       setProgress((elapsed / total) * 100);
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-      if (vid) try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
-      canvases.forEach(c => { try { ctx.drawImage(c, 0, 0, w, h); } catch {} });
+
+      ctx.fillStyle = state.bgColor || '#050508';
+      ctx.fillRect(0, 0, w, h);
+
+      try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
+
+      if ((state.overlayOpacity ?? 0) > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${state.overlayOpacity})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      container!.querySelectorAll<HTMLCanvasElement>('canvas').forEach(c => {
+        try { ctx.drawImage(c, 0, 0, w, h); } catch {}
+      });
+
+      if ((state.noiseOpacity ?? 0) > 0) {
+        if (grainTick++ % 2 === 0) refreshGrain();
+        ctx.globalAlpha = state.noiseOpacity;
+        ctx.drawImage(gCanvas, 0, 0, w, h);
+        ctx.globalAlpha = 1;
+      }
+
+      if ((state.vignetteStrength ?? 0) > 0) {
+        const vg = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.65);
+        vg.addColorStop(0.3, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, `rgba(0,0,0,${state.vignetteStrength})`);
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, w, h);
+      }
+
       rafRef.current = requestAnimationFrame(render);
     };
     render();
@@ -394,83 +436,45 @@ const VideoExportSection: React.FC<{ videoUrl?: string }> = ({ videoUrl }) => {
     cancelAnimationFrame(rafRef.current);
     const vid = document.querySelector('#heroken-canvas video') as HTMLVideoElement | null;
     if (vid) vid.playbackRate = 1;
-    setRecording(false); setProgress(0);
+    setExporting(false); setProgress(0);
   };
-
-  const withEffects = hasActiveCanvasEffects();
 
   return (
     <div className="px-5 pb-4 space-y-3">
-
-      {/* Format */}
       <div className="flex items-center gap-2">
-        <Segment
-          options={[{ id: 'mp4', label: 'MP4' }, { id: 'webm', label: 'WebM' }]}
-          value={format}
-          onChange={v => setFormat(v as 'webm' | 'mp4')}
-        />
+        <Segment options={[{ id:'mp4', label:'MP4' }, { id:'webm', label:'WebM' }]} value={format} onChange={v => setFormat(v as 'mp4'|'webm')} />
       </div>
-
-      {/* Duration + Speed + Resolution — only needed when recording with effects */}
-      {withEffects && (<>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
-          <div className="flex-1">
-            <Segment
-              options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]}
-              value={String(duration)} onChange={v => setDuration(Number(v))}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Speed</span>
-          <div className="flex-1">
-            <Segment
-              options={[{ id:'0.5', label:'0.5×' }, { id:'1', label:'1×' }]}
-              value={String(speed)} onChange={v => setSpeed(Number(v) as 0.5|1)}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
-          <div className="flex-1">
-            <Segment
-              options={[{ id:'1', label:'1×' }, { id:'2', label:'2×' }, { id:'4', label:'4×' }]}
-              value={String(pixelRatio)} onChange={v => setPixelRatio(Number(v) as 1|2|4)}
-            />
-          </div>
-        </div>
-      </>)}
-
-      {/* Action button */}
-      {recording ? (
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
+        <div className="flex-1"><Segment options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]} value={String(duration)} onChange={v => setDuration(Number(v))} /></div>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Speed</span>
+        <div className="flex-1"><Segment options={[{ id:'0.5', label:'0.5×' }, { id:'1', label:'1×' }]} value={String(speed)} onChange={v => setSpeed(Number(v) as 0.5|1)} /></div>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
+        <div className="flex-1"><Segment options={[{ id:'1', label:'1×' }, { id:'2', label:'2×' }, { id:'4', label:'4×' }]} value={String(pixelRatio)} onChange={v => setPixelRatio(Number(v) as 1|2|4)} /></div>
+      </div>
+      {exporting ? (
         <div className="space-y-2">
           <div className="w-full h-1.5 bg-[#2a2a2a] rounded-full overflow-hidden">
             <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-[#888]">Recording… {(progress * duration / 100).toFixed(1)}s / {duration}s</span>
+            <span className="text-[11px] text-[#888]">Exporting… {(progress * duration / 100).toFixed(1)}s / {duration}s</span>
             <button onClick={cancel} className="text-[10px] text-[#666] hover:text-[#999] transition-colors">Cancel</button>
           </div>
         </div>
-      ) : withEffects ? (
-        <button onClick={startRecord}
-          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg border border-[#2c2c2c] hover:border-[#444] bg-[#1a1a1a] hover:bg-[#222] text-white text-sm font-semibold transition-all">
-          <i className="ph ph-record text-red-400 text-base" />
-          Record & Export
-        </button>
       ) : (
-        <button onClick={directDownload}
-          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg bg-white text-black text-sm font-semibold hover:bg-gray-100 transition-all">
+        <button onClick={exportVideo} disabled={!videoUrl}
+          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg bg-white text-black text-sm font-semibold hover:bg-gray-100 disabled:opacity-30 transition-all">
           <i className="ph-bold ph-download-simple text-base" />
-          Download Video
+          Export Video
         </button>
       )}
-
       <p className="text-[9px] text-[#444] leading-relaxed">
-        {withEffects
-          ? 'Records canvas composite — bakes in WebGL shaders & film grain. Vignette and pattern overlays not included.'
-          : 'Downloads your video directly. Add Effects (Fluid, Aurora, etc.) to bake them in via Record & Export.'}
+        Bakes film grain, vignette &amp; overlay into every frame. Load a video to enable.
       </p>
     </div>
   );
@@ -669,7 +673,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
       {/* ── VIDEO EXPORT ────────────────────────────────────────────────── */}
       <SectionLabel>Video Export</SectionLabel>
-      <VideoExportSection videoUrl={state.videoUrl} />
+      <VideoExportSection videoUrl={state.videoUrl} state={state} />
 
       <Divider />
 

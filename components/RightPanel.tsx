@@ -613,8 +613,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           className="flex flex-col items-center justify-center gap-2 w-full h-[72px] rounded-xl border border-dashed border-[#2e2e2e] cursor-pointer hover:border-[#555] hover:bg-white/[0.03] transition-all text-[#555] hover:text-[#999]"
         >
           <i className="ph ph-upload-simple text-xl" />
-          <span className="text-xs tracking-wide">Upload Image / Video</span>
-          <input type="file" className="hidden" accept="image/*,video/mp4,video/webm"
+          <span className="text-xs tracking-wide">Upload Image</span>
+          <input type="file" className="hidden" accept="image/*"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
         </label>
 
@@ -671,11 +671,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
       <Divider />
 
-      {/* ── VIDEO EXPORT ────────────────────────────────────────────────── */}
-      <SectionLabel>Video Export</SectionLabel>
-      <VideoExportSection videoUrl={state.videoUrl} state={state} />
-
-      <Divider />
+      {/* VIDEO EXPORT — hidden in v1, re-enable when video pipeline is solid */}
+      {false && <><SectionLabel>Video Export</SectionLabel><VideoExportSection videoUrl={state.videoUrl} state={state} /><Divider /></>}
 
       {/* ── BACKGROUND ──────────────────────────────────────────────────── */}
       <SectionLabel>Background</SectionLabel>
@@ -726,8 +723,9 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
       <Divider />
 
-      {/* ── EFFECTS ─────────────────────────────────────────────────────── */}
-      <SectionLabel>Effects</SectionLabel>
+      {/* EFFECTS (atmosphere) — hidden in v1, re-enable when video export is solid */}
+      {false && <SectionLabel>Effects</SectionLabel>}
+      {false && <>
 
       {/* 5-column grid — icon + label visible */}
       <div className="px-5 pb-3 grid grid-cols-5 gap-1.5">
@@ -839,6 +837,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           )}
         </>
       )}
+
+      </>}
 
       <Divider />
 

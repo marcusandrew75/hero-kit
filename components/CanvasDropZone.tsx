@@ -81,7 +81,7 @@ const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
       {/* Instructions */}
       <div className="text-center space-y-2 pointer-events-none">
         <p className="text-white/70 text-xl font-medium tracking-tight">
-          {dragging ? 'Drop to load' : 'Drop an image or video here'}
+          {dragging ? 'Drop to load' : 'Drop an image here'}
         </p>
         <p className="text-white/35 text-sm">
           or click to browse / paste from clipboard
@@ -100,7 +100,7 @@ const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,video/mp4,video/webm"
+        accept="image/*"
         className="hidden"
         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
       />

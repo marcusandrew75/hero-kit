@@ -1090,6 +1090,105 @@ const applyImageGlitch = (
   return out;
 };
 
+// ─── Edge Glow / Neon ────────────────────────────────────────────────────────
+// Sobel edge detection → colorise edges → gaussian bloom → composite over base
+
+const applyEdgeGlow = (
+  data: Uint8ClampedArray, w: number, h: number,
+  color: string, intensity: number, bloom: number, darken: number,
+): Uint8ClampedArray => {
+  // Sobel edges on luminance
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
+  }
+  const GX = [-1,0,1,-2,0,2,-1,0,1], GY = [1,2,1,0,0,0,-1,-2,-1];
+  const edges = new Float32Array(w * h);
+  let mx = 0;
+  for (let y = 1; y < h-1; y++) {
+    for (let x = 1; x < w-1; x++) {
+      let gx = 0, gy = 0, k = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const v = lum[(y+dy)*w + (x+dx)]; gx += GX[k]*v; gy += GY[k]*v; k++;
+      }
+      const mag = Math.sqrt(gx*gx + gy*gy); edges[y*w+x] = mag; if (mag > mx) mx = mag;
+    }
+  }
+  if (mx > 0) for (let i = 0; i < edges.length; i++) edges[i] /= mx;
+
+  const hex = color.replace('#','');
+  const cr = parseInt(hex.slice(0,2),16)||0, cg = parseInt(hex.slice(2,4),16)||255, cb = parseInt(hex.slice(4,6),16)||255;
+  const str = intensity / 100;
+
+  // Build edge glow canvas then blur it
+  const glowOff = document.createElement('canvas'); glowOff.width = w; glowOff.height = h;
+  const gCtx = glowOff.getContext('2d')!;
+  const gImg = gCtx.createImageData(w, h);
+  for (let i = 0; i < w*h; i++) {
+    gImg.data[i*4]   = cr; gImg.data[i*4+1] = cg; gImg.data[i*4+2] = cb;
+    gImg.data[i*4+3] = Math.round(edges[i] * str * 255);
+  }
+  gCtx.putImageData(gImg, 0, 0);
+
+  // Bloom: draw edge layer blurred
+  const bloomOff = document.createElement('canvas'); bloomOff.width = w; bloomOff.height = h;
+  const bCtx = bloomOff.getContext('2d')!;
+  bCtx.filter = `blur(${bloom}px)`; bCtx.drawImage(glowOff, 0, 0); bCtx.filter = 'none';
+  // Second glow pass (tighter, brighter core)
+  bCtx.globalAlpha = 0.6; bCtx.drawImage(glowOff, 0, 0); bCtx.globalAlpha = 1;
+
+  // Composite: darken base then screen-blend the glow
+  const compOff = document.createElement('canvas'); compOff.width = w; compOff.height = h;
+  const cCtx = compOff.getContext('2d')!;
+
+  // Darkened base
+  const darkened = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    darkened[i]   = clamp(data[i]   * (1 - darken));
+    darkened[i+1] = clamp(data[i+1] * (1 - darken));
+    darkened[i+2] = clamp(data[i+2] * (1 - darken));
+    darkened[i+3] = data[i+3];
+  }
+  cCtx.putImageData(new ImageData(darkened, w, h), 0, 0);
+  cCtx.globalCompositeOperation = 'screen';
+  cCtx.drawImage(bloomOff, 0, 0);
+  cCtx.globalCompositeOperation = 'source-over';
+
+  return new Uint8ClampedArray(cCtx.getImageData(0, 0, w, h).data);
+};
+
+// ─── Split Tone ───────────────────────────────────────────────────────────────
+// Maps shadow tones to one colour and highlight tones to another
+
+const applySplitTone = (
+  data: Uint8ClampedArray, w: number, h: number,
+  shadowColor: string, highlightColor: string, strength: number, balance: number,
+): Uint8ClampedArray => {
+  const parseHex = (hex: string): [number,number,number] => {
+    const h = hex.replace('#','');
+    return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0];
+  };
+  const [sr,sg,sb] = parseHex(shadowColor);
+  const [hr,hg,hb] = parseHex(highlightColor);
+  const str = strength / 100;
+  const mid = 0.5 + (balance / 100) * 0.3; // balance shifts midpoint
+
+  const out = new Uint8ClampedArray(data);
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i+1], b = data[i+2];
+    const lum = (r*0.299 + g*0.587 + b*0.114) / 255;
+
+    // Smooth influence zones — no hard cutoff
+    const sInf = Math.max(0, 1 - lum / Math.max(0.001, mid)) * str;
+    const hInf = Math.max(0, (lum - mid) / Math.max(0.001, 1 - mid)) * str;
+
+    out[i]   = clamp(r + (sr - r) * sInf + (hr - r) * hInf);
+    out[i+1] = clamp(g + (sg - g) * sInf + (hg - g) * hInf);
+    out[i+2] = clamp(b + (sb - b) * sInf + (hb - b) * hInf);
+  }
+  return out;
+};
+
 // ─── Chromatic Aberration ────────────────────────────────────────────────────
 // Radial CA: R channel expands outward from centre, B contracts inward.
 // Effect is zero at the centre and maximum at the corners — exactly like a real lens.
@@ -1305,6 +1404,8 @@ interface ProcessedImageProps {
   warpOctaves: number;
   warpStyle: 'warp' | 'swirl' | 'flow';
   layers: import('../types').ImageLayer[];
+  edgeGlowEnabled: boolean; edgeGlowColor: string; edgeGlowIntensity: number; edgeGlowBloom: number; edgeGlowDarken: number;
+  splitToneEnabled: boolean; splitToneShadowColor: string; splitToneHighlightColor: string; splitToneStrength: number; splitToneBalance: number;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
   canvasDitherScale: number;
@@ -1338,6 +1439,8 @@ interface ProcessedImageProps {
 const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
   const {
     imageUrl, layers,
+    edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
+    splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
@@ -1402,6 +1505,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           let { data } = offCtx.getImageData(0, 0, w, h);
           let processed = new Uint8ClampedArray(data);
           if (colorGradeEnabled)   processed = applyGrade(processed, colorGradePreset, colorGradeStrength);
+          if (splitToneEnabled)    processed = applySplitTone(processed, w, h, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance);
+          if (edgeGlowEnabled)     processed = applyEdgeGlow(processed, w, h, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken);
           if (imageGlitchEnabled)  processed = applyImageGlitch(processed, w, h, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit, imageGlitchStyle);
           if (dispersionEnabled)   processed = applyDispersion(processed, w, h, dispersionThreshold, dispersionStrength, dispersionDirection, dispersionSpread);
           if (warpEnabled)         processed = applyDisplacementWarp(processed, w, h, warpStrength, warpScale, warpOctaves, warpStyle);
@@ -1442,6 +1547,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     return () => { cancelled = true; ro.disconnect(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl, JSON.stringify(layers),
+      edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
+      splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -1713,6 +1820,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     effectsOpacity,
     halftoneEnabled, halftoneDotSize, halftoneSpacing, halftoneColor, halftoneInvert,
     layers,
+    edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
+    splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -1735,6 +1844,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
 
   const useProcessedCanvas = !!imageUrl && (
     (layers.some(l => l.imageUrl)) ||
+    (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -1811,6 +1921,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 colorGradePreset={(colorGradePreset ?? 'teal-orange') as GradePreset}
                 colorGradeStrength={colorGradeStrength ?? 1}
                 layers={layers ?? []}
+                edgeGlowEnabled={edgeGlowEnabled ?? false} edgeGlowColor={edgeGlowColor ?? '#00ffff'} edgeGlowIntensity={edgeGlowIntensity ?? 60} edgeGlowBloom={edgeGlowBloom ?? 8} edgeGlowDarken={edgeGlowDarken ?? 0.5}
+                splitToneEnabled={splitToneEnabled ?? false} splitToneShadowColor={splitToneShadowColor ?? '#1a237e'} splitToneHighlightColor={splitToneHighlightColor ?? '#ff6d00'} splitToneStrength={splitToneStrength ?? 60} splitToneBalance={splitToneBalance ?? 0}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson')}
                 canvasDitherScale={ditherScale ?? 4}

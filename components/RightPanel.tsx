@@ -1,5 +1,6 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { BUILT_IN_PRESETS } from '../presets';
 import { toPng, toJpeg } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
 import {
@@ -861,9 +862,46 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             />
           </div>
         </div>
+
+        {/* Copy PNG to clipboard — feeds the Figma plugin */}
+        <button
+          onClick={async () => {
+            const node = document.getElementById('heroken-canvas');
+            if (!node) return;
+            try {
+              const pr = resolution === '4x' ? 4 : resolution === '2x' ? 2 : 1;
+              const dataUrl = await toPng(node, { pixelRatio: pr, cacheBust: true });
+              const blob = await (await fetch(dataUrl)).blob();
+              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            } catch { alert('Copy failed — try a lower resolution.'); }
+          }}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-[#2c2c2c] hover:border-[#444] text-[#666] hover:text-white text-[11px] font-medium transition-all"
+        >
+          <i className="ph ph-copy text-sm" />
+          Copy PNG — for Figma plugin
+        </button>
       </div>
 
       <Divider />
+
+      {/* ── PRESETS ─────────────────────────────────────────────────────── */}
+      {hasSource && (<>
+        <SectionLabel>Presets</SectionLabel>
+        <div className="px-5 pb-4 grid grid-cols-2 gap-2">
+          {BUILT_IN_PRESETS.map(preset => (
+            <button
+              key={preset.name}
+              onClick={() => onChange(preset.state)}
+              className="group text-left rounded-xl border border-[#252525] bg-[#111] hover:border-white/20 hover:bg-[#161616] transition-all p-3"
+            >
+              <div className="text-lg mb-1">{preset.emoji}</div>
+              <p className="text-[11px] font-semibold text-white/90 leading-tight mb-0.5">{preset.name}</p>
+              <p className="text-[9px] text-[#555] group-hover:text-[#777] transition-colors leading-relaxed">{preset.description}</p>
+            </button>
+          ))}
+        </div>
+        <Divider />
+      </>)}
 
       {/* ── GALLERY ─────────────────────────────────────────────────────── */}
       <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
@@ -1457,6 +1495,40 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         <p className="text-[10px] text-[#444] px-5 pb-2 italic">
           Combine with Pixel Sort for painterly results.
         </p>
+      </>)}
+
+      <Divider />
+
+      {/* ── EDGE GLOW / NEON ────────────────────────────────────────────── */}
+      <SectionLabel>Edge Glow</SectionLabel>
+      <Row label="Enable">
+        <button onClick={() => set({ edgeGlowEnabled: !state.edgeGlowEnabled })}
+          className={`relative w-10 h-5 rounded-full border transition-all ${state.edgeGlowEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}>
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.edgeGlowEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
+        </button>
+      </Row>
+      {state.edgeGlowEnabled && (<>
+        <Row label="Glow colour"><ColorDot value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} size={24} /></Row>
+        <Row label="Intensity"><Slider value={state.edgeGlowIntensity ?? 65} min={10} max={100} onChange={v => set({ edgeGlowIntensity: v })} /></Row>
+        <Row label="Bloom"><Slider value={state.edgeGlowBloom ?? 8} min={1} max={30} onChange={v => set({ edgeGlowBloom: v })} /></Row>
+        <Row label="Darken base"><Slider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90} onChange={v => set({ edgeGlowDarken: v / 100 })} /></Row>
+      </>)}
+
+      <Divider />
+
+      {/* ── SPLIT TONE ──────────────────────────────────────────────────── */}
+      <SectionLabel>Split Tone</SectionLabel>
+      <Row label="Enable">
+        <button onClick={() => set({ splitToneEnabled: !state.splitToneEnabled })}
+          className={`relative w-10 h-5 rounded-full border transition-all ${state.splitToneEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}>
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.splitToneEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
+        </button>
+      </Row>
+      {state.splitToneEnabled && (<>
+        <Row label="Shadows"><ColorDot value={state.splitToneShadowColor ?? '#1a237e'} onChange={v => set({ splitToneShadowColor: v })} size={24} /></Row>
+        <Row label="Highlights"><ColorDot value={state.splitToneHighlightColor ?? '#ff6d00'} onChange={v => set({ splitToneHighlightColor: v })} size={24} /></Row>
+        <Row label="Strength"><Slider value={state.splitToneStrength ?? 60} min={1} max={100} onChange={v => set({ splitToneStrength: v })} /></Row>
+        <Row label="Balance"><Slider value={(state.splitToneBalance ?? 0) + 50} min={0} max={100} onChange={v => set({ splitToneBalance: v - 50 })} /></Row>
       </>)}
 
       <Divider />

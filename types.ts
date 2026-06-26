@@ -111,6 +111,20 @@ export interface BackgroundState {
   pixelSortDirection: 'up' | 'down' | 'left' | 'right';
   pixelSortMode: 'brightness' | 'hue' | 'saturation';
 
+  // Edge Glow / Neon
+  edgeGlowEnabled: boolean;
+  edgeGlowColor: string;
+  edgeGlowIntensity: number;  // 0–100
+  edgeGlowBloom: number;      // blur radius px
+  edgeGlowDarken: number;     // 0–1 how much to darken base
+
+  // Split Tone
+  splitToneEnabled: boolean;
+  splitToneShadowColor: string;
+  splitToneHighlightColor: string;
+  splitToneStrength: number;  // 0–100
+  splitToneBalance: number;   // -50 to +50
+
   // Image layers (composited on top of primary imageUrl)
   layers: ImageLayer[];
 

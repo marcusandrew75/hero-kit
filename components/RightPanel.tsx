@@ -863,23 +863,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </div>
         </div>
 
-        {/* Copy PNG to clipboard — feeds the Figma plugin */}
-        <button
-          onClick={async () => {
-            const node = document.getElementById('heroken-canvas');
-            if (!node) return;
-            try {
-              const pr = resolution === '4x' ? 4 : resolution === '2x' ? 2 : 1;
-              const dataUrl = await toPng(node, { pixelRatio: pr, cacheBust: true });
-              const blob = await (await fetch(dataUrl)).blob();
-              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            } catch { alert('Copy failed — try a lower resolution.'); }
-          }}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-[#2c2c2c] hover:border-[#444] text-[#666] hover:text-white text-[11px] font-medium transition-all"
-        >
-          <i className="ph ph-copy text-sm" />
-          Copy PNG — for Figma plugin
-        </button>
+        {/* Copy PNG for Figma plugin — hidden until plugin is finalised */}
+        {false && <button className="hidden" />}
       </div>
 
       <Divider />
@@ -894,8 +879,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               onClick={() => onChange(preset.state)}
               className="group text-left rounded-xl border border-[#252525] bg-[#111] hover:border-white/20 hover:bg-[#161616] transition-all p-3"
             >
-              <div className="text-lg mb-1">{preset.emoji}</div>
-              <p className="text-[11px] font-semibold text-white/90 leading-tight mb-0.5">{preset.name}</p>
+              <p className="text-[11px] font-semibold text-white/90 leading-tight mb-1">{preset.name}</p>
               <p className="text-[9px] text-[#555] group-hover:text-[#777] transition-colors leading-relaxed">{preset.description}</p>
             </button>
           ))}

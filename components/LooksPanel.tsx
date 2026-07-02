@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { BackgroundState } from '../types';
+import { DEFAULT } from '../defaultState';
 import { T } from './ui/HardwareControls';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,6 +21,27 @@ export interface HistoryEntry {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Keeps only the fields that differ from DEFAULT. BackgroundState has 150+
+ *  fields now (every effect's parameters); a saved Look typically changes a
+ *  handful of them and leaves the rest at default, but without this every
+ *  field gets stored/shared regardless. That's what was making share links
+ *  (which base64-encode the whole state into the URL) so large X choked on
+ *  them — this typically cuts a link by an order of magnitude. Bonus: also
+ *  shrinks each look's localStorage footprint. */
+const diffFromDefault = (s: Partial<BackgroundState>): Partial<BackgroundState> => {
+  const out: Record<string, unknown> = {};
+  (Object.keys(s) as (keyof BackgroundState)[]).forEach(key => {
+    const value = s[key];
+    const defaultValue = (DEFAULT as unknown as Record<string, unknown>)[key];
+    // Reference/primitive equality first (cheap, covers most fields);
+    // JSON comparison as a fallback for arrays/objects (layers, blurSpots,
+    // effectMaskStrokes, meshColors) where reference equality never matches.
+    const same = value === defaultValue || JSON.stringify(value) === JSON.stringify(defaultValue);
+    if (!same) out[key] = value;
+  });
+  return out as Partial<BackgroundState>;
+};
+
 /** Strip large binary data before saving — keeps localStorage lean.
  *  Layer images are base64 data-URIs; leaving them in a saved Look can push a
  *  single entry to several MB, which silently exhausts the origin's storage
@@ -27,7 +49,7 @@ export interface HistoryEntry {
 const stripMedia = (s: BackgroundState): Partial<BackgroundState> => {
   const { imageUrl: _i, videoUrl: _v, layers, ...rest } = s;
   const strippedLayers = layers?.map(({ imageUrl: _li, ...l }) => l);
-  return { ...rest, layers: strippedLayers };
+  return diffFromDefault({ ...rest, layers: strippedLayers });
 };
 
 const loadLooks = (): SavedLook[] => {
@@ -142,7 +164,10 @@ const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
 
   // ── URL share ──────────────────────────────────────────────────────────────
   const copyLink = (look: SavedLook) => {
-    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(look.state))));
+    // Re-diff defensively — Looks saved before this fix still have the full,
+    // bloated state stored, so this keeps the share link compact regardless
+    // of when the Look was originally saved.
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(diffFromDefault(look.state)))));
     const url = `${location.origin}${location.pathname}#look=${encoded}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(look.id);

@@ -1268,7 +1268,7 @@ const applyHalftonePixels = (
   // print look (dot size still modulated by the source image's brightness,
   // exactly like the standard mode, just no third color from the photo
   // showing through).
-  duotone: boolean = false, bgColor: string = '#10193f',
+  duotone: boolean = false, bgColor: string = '#ebf2b5',
 ): Uint8ClampedArray => {
   const parseHex = (hex: string): [number, number, number] => {
     const h2 = hex.replace('#', '');
@@ -2114,7 +2114,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
-          if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#10193f');
+          if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#ebf2b5');
           if (canvasDitherStyle === 'ascii') {
             processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
           } else if (canvasDitherStyle !== 'none') {
@@ -2493,7 +2493,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 halftoneOpacity={halftoneOpacity ?? 1}
                 halftoneInvert={halftoneInvert ?? false}
                 halftoneDuotoneEnabled={halftoneDuotoneEnabled ?? false}
-                halftoneBgColor={halftoneBgColor ?? '#10193f'}
+                halftoneBgColor={halftoneBgColor ?? '#ebf2b5'}
                 effectMaskEnabled={effectMaskEnabled ?? false}
                 effectMaskStrokes={effectMaskStrokes ?? []}
                 effectMaskFeather={effectMaskFeather ?? 20}

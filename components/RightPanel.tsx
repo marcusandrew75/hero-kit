@@ -1029,7 +1029,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </Row>
             {state.halftoneDuotoneEnabled && (
               <Row label="Background">
-                <ColorSwatch value={state.halftoneBgColor ?? '#10193f'} onChange={v => set({ halftoneBgColor: v })} />
+                <ColorSwatch value={state.halftoneBgColor ?? '#ebf2b5'} onChange={v => set({ halftoneBgColor: v })} />
               </Row>
             )}
             <Row label={state.halftoneDuotoneEnabled ? 'Ink' : 'Color'}>

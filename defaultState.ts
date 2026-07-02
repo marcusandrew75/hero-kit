@@ -60,6 +60,8 @@ export const DEFAULT: BackgroundState = {
   halftoneInvert: false,
   halftonePattern: 'dot',
   halftoneAngle: 45,
+  halftoneDuotoneEnabled: false,
+  halftoneBgColor: '#10193f',
   colorGradeEnabled: false,
   colorGradePreset: 'teal-orange',
   colorGradeStrength: 1,

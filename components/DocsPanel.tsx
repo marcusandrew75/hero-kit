@@ -78,7 +78,7 @@ const DOCS: DocSection[] = [
     entries: [
       {
         title: 'Halftone — Dot, Line, Crosshatch',
-        body: `Halftone printing is the single technique that made photographic reproduction in mass media possible — Frederic Ives and Stephen Horgan's breakthrough in the 1880s let newspapers and books print photographs using nothing but ink dots of varying size. Dot pattern is the classic newspaper-plate look. Line screen goes back further still, echoing copper and steel engraving traditions that predate photography entirely — tonal variation created by the spacing and weight of parallel lines rather than dots. Crosshatch overlays two line screens at 90° — the same cross-hatching technique an etcher or engraver would use by hand to build up shadow density, now automated at any angle.`,
+        body: `Halftone printing is the single technique that made photographic reproduction in mass media possible — Frederic Ives and Stephen Horgan's breakthrough in the 1880s let newspapers and books print photographs using nothing but ink dots of varying size. Dot pattern is the classic newspaper-plate look. Line screen goes back further still, echoing copper and steel engraving traditions that predate photography entirely — tonal variation created by the spacing and weight of parallel lines rather than dots. Crosshatch overlays two line screens at 90° — the same cross-hatching technique an etcher or engraver would use by hand to build up shadow density, now automated at any angle. Duotone mode flattens the photo to two flat inks entirely — a background color plus a dot-color, with no original photo color left showing through — the poster/screen-print look rather than a tinted photograph.`,
       },
       {
         title: 'CMYK Separation',
@@ -161,6 +161,12 @@ const DOCS: DocSection[] = [
 interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
+  {
+    version: '2.8', date: '2 Jul 2026',
+    items: [
+      'Added: Duotone mode for Halftone — flattens the photo to a background color plus a dot-ink color instead of multiply-blending one ink over the photo, for a flat two-color screen-print/poster look rather than a tinted photograph',
+    ],
+  },
   {
     version: '2.7', date: '2 Jul 2026',
     items: [

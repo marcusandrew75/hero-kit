@@ -1262,6 +1262,13 @@ const applyHalftonePixels = (
   pattern: 'dot' | 'line' | 'crosshatch',
   dotSize: number, spacing: number, angle: number,
   color: string, opacity: number, invert: boolean,
+  // Duotone mode: instead of multiply-blending the ink color over the source
+  // image, the whole frame is first flattened to `bgColor`, then the ink
+  // color is stamped in as flat opaque coverage — the two-flat-ink screen
+  // print look (dot size still modulated by the source image's brightness,
+  // exactly like the standard mode, just no third color from the photo
+  // showing through).
+  duotone: boolean = false, bgColor: string = '#10193f',
 ): Uint8ClampedArray => {
   const parseHex = (hex: string): [number, number, number] => {
     const h2 = hex.replace('#', '');
@@ -1277,8 +1284,17 @@ const applyHalftonePixels = (
     return (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114) / 255;
   };
 
-  // Multiply-blends the ink color into `out` at full coverage, scaled by
-  // opacity — matches the old CSS mix-blend-mode: multiply behaviour.
+  if (duotone) {
+    const [br, bgc, bb] = parseHex(bgColor);
+    for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+      out[i] = br; out[i+1] = bgc; out[i+2] = bb;
+    }
+  }
+
+  // Standard mode multiply-blends the ink color into `out` at full coverage,
+  // scaled by opacity (matches the old CSS mix-blend-mode: multiply
+  // behaviour). Duotone mode lerps straight toward the flat ink color
+  // instead, since `out` is now the flattened background, not photo detail.
   const drawCircle = (cx: number, cy: number, r: number) => {
     if (r <= 0.2) return;
     const minX = Math.max(0, Math.floor(cx - r)), maxX = Math.min(w - 1, Math.ceil(cx + r));
@@ -1290,9 +1306,15 @@ const applyHalftonePixels = (
         const dx = px - cx;
         if (dx * dx + dy * dy > r2) continue;
         const i = (py * w + px) * 4;
-        out[i]   = out[i]   * (1 - opacity) + (out[i]   * cr / 255) * opacity;
-        out[i+1] = out[i+1] * (1 - opacity) + (out[i+1] * cg / 255) * opacity;
-        out[i+2] = out[i+2] * (1 - opacity) + (out[i+2] * cb / 255) * opacity;
+        if (duotone) {
+          out[i]   = out[i]   * (1 - opacity) + cr * opacity;
+          out[i+1] = out[i+1] * (1 - opacity) + cg * opacity;
+          out[i+2] = out[i+2] * (1 - opacity) + cb * opacity;
+        } else {
+          out[i]   = out[i]   * (1 - opacity) + (out[i]   * cr / 255) * opacity;
+          out[i+1] = out[i+1] * (1 - opacity) + (out[i+1] * cg / 255) * opacity;
+          out[i+2] = out[i+2] * (1 - opacity) + (out[i+2] * cb / 255) * opacity;
+        }
       }
     }
   };
@@ -1972,6 +1994,8 @@ interface ProcessedImageProps {
   halftoneColor: string;
   halftoneOpacity: number;
   halftoneInvert: boolean;
+  halftoneDuotoneEnabled: boolean;
+  halftoneBgColor: string;
   effectMaskEnabled: boolean;
   effectMaskStrokes: import('../types').MaskStroke[];
   effectMaskFeather: number;
@@ -2018,6 +2042,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
     halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
+    halftoneDuotoneEnabled, halftoneBgColor,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2089,7 +2114,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
-          if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert);
+          if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#10193f');
           if (canvasDitherStyle === 'ascii') {
             processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
           } else if (canvasDitherStyle !== 'none') {
@@ -2149,6 +2174,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
       halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
+      halftoneDuotoneEnabled, halftoneBgColor,
       effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
       dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2324,6 +2350,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     effectsOpacity,
     halftoneEnabled, halftoneDotSize, halftoneSpacing, halftoneColor, halftoneInvert,
     halftonePattern, halftoneAngle, halftoneOpacity,
+    halftoneDuotoneEnabled, halftoneBgColor,
     layers,
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
@@ -2465,6 +2492,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 halftoneColor={halftoneColor ?? '#000000'}
                 halftoneOpacity={halftoneOpacity ?? 1}
                 halftoneInvert={halftoneInvert ?? false}
+                halftoneDuotoneEnabled={halftoneDuotoneEnabled ?? false}
+                halftoneBgColor={halftoneBgColor ?? '#10193f'}
                 effectMaskEnabled={effectMaskEnabled ?? false}
                 effectMaskStrokes={effectMaskStrokes ?? []}
                 effectMaskFeather={effectMaskFeather ?? 20}

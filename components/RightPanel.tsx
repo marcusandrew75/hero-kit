@@ -1021,7 +1021,18 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                   onChange={v => set({ halftoneAngle: v })} />
               </Row>
             )}
-            <Row label="Color">
+            <Row label="Duotone">
+              {/* Flattens the photo to two flat inks — bgColor fills the whole
+                  frame, halftoneColor is stamped in as opaque dot coverage —
+                  instead of multiply-blending one ink over the source image. */}
+              <TactileToggle value={state.halftoneDuotoneEnabled ?? false} onChange={v => set({ halftoneDuotoneEnabled: v })} />
+            </Row>
+            {state.halftoneDuotoneEnabled && (
+              <Row label="Background">
+                <ColorSwatch value={state.halftoneBgColor ?? '#10193f'} onChange={v => set({ halftoneBgColor: v })} />
+              </Row>
+            )}
+            <Row label={state.halftoneDuotoneEnabled ? 'Ink' : 'Color'}>
               <ColorSwatch value={state.halftoneColor} onChange={v => set({ halftoneColor: v })} />
             </Row>
             <Row label="Opacity">

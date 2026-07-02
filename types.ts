@@ -109,6 +109,8 @@ export interface BackgroundState {
   halftoneInvert: boolean;
   halftonePattern: 'dot' | 'line' | 'crosshatch';
   halftoneAngle: number; // degrees — screen angle for line/crosshatch, like CMYK plate angles
+  halftoneDuotoneEnabled: boolean; // flat two-ink mode: fills to halftoneBgColor, stamps halftoneColor as opaque dot coverage instead of multiply-blending over the photo
+  halftoneBgColor: string;
 
   // Color Grade (includes vintage presets)
   colorGradeEnabled: boolean;

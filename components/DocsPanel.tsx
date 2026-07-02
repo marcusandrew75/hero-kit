@@ -162,6 +162,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '2.7', date: '2 Jul 2026',
+    items: [
+      'Hidden: share link on Looks — links were still too long for platforms like X to accept even after the diff-from-default fix. Will return backed by a proper short-link service',
+    ],
+  },
+  {
     version: '2.6', date: '2 Jul 2026',
     items: [
       'Fixed: Looks share links were often too large for X and other platforms to accept — every field in BackgroundState (150+ now) was being embedded regardless of whether it differed from default. Saved Looks and share links now only include fields that actually differ from default, typically shrinking a link by an order of magnitude. Applies retroactively to Looks saved before this fix, too',

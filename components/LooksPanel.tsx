@@ -313,16 +313,22 @@ const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
                       <p className="text-[10px] mt-0.5" style={{ color: T.dim }}>{relativeTime(look.createdAt)}</p>
                     </button>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => copyLink(look)}
-                        title="Copy share link"
-                        className="w-7 h-7 flex items-center justify-center rounded-lg border transition-all"
-                        style={{
-                          borderColor: copied === look.id ? '#16a34a' : T.border,
-                          color: copied === look.id ? '#16a34a' : T.muted,
-                        }}>
-                        <i className={`ph ${copied === look.id ? 'ph-check' : 'ph-link-simple'} text-sm`} />
-                      </button>
+                      {/* Share link — hidden for now, URLs were still too long
+                          for platforms like X even after the diff-from-default
+                          fix. Keeping copyLink intact for when this comes back,
+                          likely backed by a real short-link service next time. */}
+                      {false && (
+                        <button
+                          onClick={() => copyLink(look)}
+                          title="Copy share link"
+                          className="w-7 h-7 flex items-center justify-center rounded-lg border transition-all"
+                          style={{
+                            borderColor: copied === look.id ? '#16a34a' : T.border,
+                            color: copied === look.id ? '#16a34a' : T.muted,
+                          }}>
+                          <i className={`ph ${copied === look.id ? 'ph-check' : 'ph-link-simple'} text-sm`} />
+                        </button>
+                      )}
                       <button
                         onClick={() => exportLook(look)}
                         title="Export this Look as JSON"

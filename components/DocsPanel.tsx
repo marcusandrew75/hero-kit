@@ -162,6 +162,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '2.5', date: '2 Jul 2026',
+    items: [
+      'Effect Mask\'s Brush size and Feather values are now editable LCD-style fields (click to type an exact number), matching every other numeric readout in the app — were previously plain, non-editable text',
+    ],
+  },
+  {
     version: '2.4', date: '2 Jul 2026',
     items: [
       'Added Effect Mask — paint a region to restrict every active effect to just that area, with a feathered edge; everywhere else stays as the original image',

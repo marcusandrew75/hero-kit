@@ -2,7 +2,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { MaskStroke } from '../types';
-import { TactileToggle, T } from './ui/HardwareControls';
+import { TactileToggle, LcdDisplay, T } from './ui/HardwareControls';
 
 interface Props {
   imageUrl?: string;
@@ -305,7 +305,8 @@ const EffectMaskPad: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-medium" style={{ color: T.muted }}>Brush size</span>
-                    <span className="text-[11px] font-mono font-semibold" style={{ color: T.text }}>{Math.round(brushSize * 100)}</span>
+                    <LcdDisplay value={Math.round(brushSize * 100)} min={2} max={40} step={1} decimals={0}
+                      onChange={v => onBrushSizeChange(v / 100)} small />
                   </div>
                   <input type="range" min={2} max={40} value={Math.round(brushSize * 100)}
                     onChange={e => onBrushSizeChange(Number(e.target.value) / 100)}
@@ -314,7 +315,8 @@ const EffectMaskPad: React.FC<Props> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[11px] font-medium" style={{ color: T.muted }}>Feather</span>
-                    <span className="text-[11px] font-mono font-semibold" style={{ color: T.text }}>{feather}</span>
+                    <LcdDisplay value={feather} min={0} max={100} step={1} decimals={0}
+                      onChange={onFeatherChange} small />
                   </div>
                   <input type="range" min={0} max={100} value={feather}
                     onChange={e => onFeatherChange(Number(e.target.value))}

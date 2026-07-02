@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
-import PreviewOverlay, { PreviewLayout } from './components/PreviewOverlay';
+import PreviewOverlay, { PreviewLayout, PreviewFont } from './components/PreviewOverlay';
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
 import { BackgroundState } from './types';
@@ -10,7 +10,8 @@ import { BackgroundState } from './types';
 // ─── Default State ────────────────────────────────────────────────────────────
 
 const DEFAULT: BackgroundState = {
-  bgColor: '#050508',
+  bgColor: '#f2f0eb',
+  maskColor: '#0a0a0a',
   imageFilter: 'none',
   imageBlur: 0,
   imageMask: 'none',
@@ -19,6 +20,14 @@ const DEFAULT: BackgroundState = {
   chromaticAberration: 0,
   ditherStyle: 'none',
   ditherScale: 1,
+  ditherDuotoneEnabled: false,
+  ditherDuotoneShadowColor: '#10193f',
+  ditherDuotoneHighlightColor: '#f4e4b8',
+  ditherDuotoneLevels: 2,
+  ditherDuotoneInvert: false,
+  ditherAsciiCharSize: 14,
+  ditherAsciiBrightness: 20,
+  ditherMatrixSize: 4,
   atmosphereStyle: 'none',
   meshColors: { color1: '#c4b5fd', color2: '#6366f1', color3: '#4338ca' },
   meshSpeed: 'slow',
@@ -53,6 +62,8 @@ const DEFAULT: BackgroundState = {
   halftoneColor: '#000000',
   halftoneOpacity: 1,
   halftoneInvert: false,
+  halftonePattern: 'dot',
+  halftoneAngle: 45,
   colorGradeEnabled: false,
   colorGradePreset: 'teal-orange',
   colorGradeStrength: 1,
@@ -71,6 +82,15 @@ const DEFAULT: BackgroundState = {
   splitToneHighlightColor: '#ff6d00',
   splitToneStrength: 60,
   splitToneBalance: 0,
+  risoEnabled: false,
+  risoColor1: '#ff48b0', // riso fluorescent pink
+  risoColor2: '#0078bf', // riso blue
+  risoScale: 4,
+  risoOffset: 3,
+  risoGrain: 40,
+  cmykSeparationEnabled: false,
+  cmykDotSize: 4,
+  cmykSpacing: 8,
   dispersionEnabled: false,
   dispersionStrength: 80,
   dispersionThreshold: 140,
@@ -97,6 +117,12 @@ const DEFAULT: BackgroundState = {
   spotBlurEnabled: false,
   spotBlurRadius: 18,
   blurSpots: [],
+  effectMaskEnabled: false,
+  effectMaskStrokes: [],
+  effectMaskBrushSize: 0.08,
+  effectMaskFeather: 20,
+  effectMaskInvert: false,
+  effectMaskShowOverlay: true,
 };
 
 export { DEFAULT };
@@ -122,8 +148,14 @@ const HISTORY_MAX = 25;
 
 const saveHistoryEntry = (s: BackgroundState) => {
   try {
-    const { imageUrl: _i, videoUrl: _v, ...rest } = s;
-    const entry: HistoryEntry = { id: crypto.randomUUID(), state: rest, timestamp: Date.now() };
+    const { imageUrl: _i, videoUrl: _v, layers, ...rest } = s;
+    // Layer images are uploaded as base64 data-URIs — leaving them in means every
+    // 3-second auto-save writes megabytes to localStorage, which silently exhausts
+    // the origin's storage quota within minutes and then blocks ALL further writes,
+    // including Looks saves (shared quota). History only needs to restore effect
+    // settings, not re-embed the actual layer image data.
+    const strippedLayers = layers?.map(({ imageUrl: _li, ...l }) => l);
+    const entry: HistoryEntry = { id: crypto.randomUUID(), state: { ...rest, layers: strippedLayers }, timestamp: Date.now() };
     const prev = loadHistory();
     localStorage.setItem('herokit-history', JSON.stringify([entry, ...prev].slice(0, HISTORY_MAX)));
   } catch { /* quota exceeded */ }
@@ -133,6 +165,7 @@ const App: React.FC = () => {
   const [state, setState]                 = useState<BackgroundState>(DEFAULT);
   const [showPreview, setShowPreview]     = useState(false);
   const [previewLayout, setPreviewLayout] = useState<PreviewLayout>('left');
+  const [previewFont, setPreviewFont]     = useState<PreviewFont>('sans');
   const [previewDim, setPreviewDim]       = useState(0);
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
@@ -215,12 +248,12 @@ const App: React.FC = () => {
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#111]">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#f2f0eb]">
       {/* Canvas area */}
       <div
         ref={outerRef}
         className={`flex-1 relative overflow-hidden transition-colors duration-300 ${
-          aspectRatio !== 'free' ? 'flex items-center justify-center bg-[#060606]' : ''
+          aspectRatio !== 'free' ? 'flex items-center justify-center bg-[#e8e5df]' : ''
         }`}
       >
         {/* Constrained canvas box — fills freely or locks to exact computed size */}
@@ -232,7 +265,7 @@ const App: React.FC = () => {
                   width:  boxSize.w,
                   height: boxSize.h,
                   flexShrink: 0,
-                  boxShadow: '0 0 0 1px rgba(255,255,255,0.08), 0 8px 40px rgba(0,0,0,0.6)',
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.08), 0 8px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)',
                 }
               : { position: 'absolute', inset: 0 }
           }
@@ -253,21 +286,21 @@ const App: React.FC = () => {
           {/* Context preview overlay */}
           {showPreview && (
             <div className="absolute inset-0 z-[100]">
-              <PreviewOverlay layout={previewLayout} />
+              <PreviewOverlay layout={previewLayout} font={previewFont} />
             </div>
           )}
         </div>
 
         {/* Aspect ratio selector — top centre */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[130] flex items-center bg-black/55 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-xl">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[130] flex items-center bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-lg">
           {RATIOS.map(r => (
             <button
               key={r.id}
               onClick={() => setAspectRatio(r.id)}
               className={`px-3 py-[6px] rounded-full text-[11px] font-medium transition-all ${
                 aspectRatio === r.id
-                  ? 'bg-white text-black shadow-sm'
-                  : 'text-white/45 hover:text-white'
+                  ? 'bg-[#1a1917] text-[#f2f0eb] shadow-sm'
+                  : 'text-black/40 hover:text-black/80'
               }`}
             >
               {r.label}
@@ -287,8 +320,8 @@ const App: React.FC = () => {
             onTouchEnd={() => setHideEffects(false)}
             className={`w-8 h-8 flex items-center justify-center rounded-lg backdrop-blur-sm border transition-all select-none ${
               hideEffects
-                ? 'bg-white text-black border-white'
-                : 'bg-black/40 border-white/10 text-white/40 hover:text-white hover:border-white/25'
+                ? 'bg-[#1a1917] text-[#f2f0eb] border-[#1a1917]'
+                : 'bg-white/70 border-black/10 text-black/40 hover:text-black/80 hover:border-black/20'
             }`}
           >
             <i className="ph ph-eye text-sm" />
@@ -298,20 +331,20 @@ const App: React.FC = () => {
           <button
             onClick={() => setIsFullscreen(v => !v)}
             title={isFullscreen ? 'Show panel' : 'Hide panel'}
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-black/40 backdrop-blur-sm border border-white/10 text-white/40 hover:text-white hover:border-white/25 transition-all"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm border border-black/10 text-black/40 hover:text-black/80 hover:border-black/20 transition-all"
           >
             <i className={`ph ${isFullscreen ? 'ph-sidebar-simple' : 'ph-arrows-out'} text-sm`} />
           </button>
         </div>
 
         {/* Floating preview toggle */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1.5 bg-black/60 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1.5 shadow-2xl">
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1.5 bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 shadow-lg">
 
           {/* Toggle */}
           <button
             onClick={() => setShowPreview(v => !v)}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap ${
-              showPreview ? 'bg-white text-black' : 'text-white/70 hover:text-white'
+              showPreview ? 'bg-[#1a1917] text-[#f2f0eb]' : 'text-black/60 hover:text-black/90'
             }`}
           >
             <i className={`ph ${showPreview ? 'ph-eye-slash' : 'ph-eye'} text-sm`} />
@@ -321,7 +354,7 @@ const App: React.FC = () => {
           {showPreview && (
             <>
               {/* Divider */}
-              <div className="w-px h-4 bg-white/15 mx-0.5" />
+              <div className="w-px h-4 bg-black/12 mx-0.5" />
 
               {/* Layout icon buttons */}
               {PREVIEW_LAYOUTS.map(l => (
@@ -331,8 +364,8 @@ const App: React.FC = () => {
                   title={l.title}
                   className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
                     previewLayout === l.id
-                      ? 'bg-white/20 text-white'
-                      : 'text-white/40 hover:text-white/80'
+                      ? 'bg-black/10 text-black/90'
+                      : 'text-black/35 hover:text-black/70'
                   }`}
                 >
                   <i className={`ph ${l.icon} text-base`} />
@@ -340,11 +373,25 @@ const App: React.FC = () => {
               ))}
 
               {/* Divider */}
-              <div className="w-px h-4 bg-white/15 mx-0.5" />
+              <div className="w-px h-4 bg-black/12 mx-0.5" />
+
+              {/* Headline font — Sans / Serif, matches the mock's actual title design */}
+              <button
+                onClick={() => setPreviewFont(f => (f === 'sans' ? 'serif' : 'sans'))}
+                title={previewFont === 'sans' ? 'Switch headline to serif' : 'Switch headline to sans-serif'}
+                className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
+                  previewFont === 'serif' ? 'bg-black/10 text-black/90' : 'text-black/35 hover:text-black/70'
+                }`}
+              >
+                <span style={previewFont === 'serif' ? { fontFamily: '"Playfair Display", serif' } : {}} className="text-[15px] font-semibold leading-none">Aa</span>
+              </button>
+
+              {/* Divider */}
+              <div className="w-px h-4 bg-black/12 mx-0.5" />
 
               {/* Dim slider */}
               <div className="flex items-center gap-2 px-2">
-                <i className="ph ph-circle-half text-white/40 text-sm" />
+                <i className="ph ph-circle-half text-black/35 text-sm" />
                 <input
                   type="range"
                   min={0} max={80} step={1}
@@ -353,7 +400,7 @@ const App: React.FC = () => {
                   className="heroken-slider w-20"
                   title="Dim background"
                 />
-                <span className="text-[10px] text-white/40 w-6 tabular-nums">{previewDim}%</span>
+                <span className="text-[10px] text-black/40 w-6 tabular-nums">{previewDim}%</span>
               </div>
             </>
           )}

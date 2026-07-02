@@ -870,11 +870,35 @@ const applyDispersion = (
 // All three algorithms read actual pixel values so they export correctly.
 // Scale controls Bayer cell size (ordered) or quantisation levels (error diffusion).
 
-const BAYER_4 = [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]] as const;
+// Bayer matrix generator — standard recursive construction, n must be a power
+// of two. Verified against the previous hardcoded 4×4 table (identical output),
+// generalised so users can pick pattern coarseness: 2×2 = very coarse/graphic,
+// 16×16 = fine, near-photographic ordered dither.
+const bayerMatrixCache = new Map<number, number[][]>();
+const buildBayerMatrix = (n: number): number[][] => {
+  const cached = bayerMatrixCache.get(n);
+  if (cached) return cached;
+  if (n <= 1) { const m = [[0]]; bayerMatrixCache.set(1, m); return m; }
+  const half   = buildBayerMatrix(n / 2);
+  const halfN  = n / 2;
+  const m: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let y = 0; y < halfN; y++) {
+    for (let x = 0; x < halfN; x++) {
+      const v = half[y][x] * 4;
+      m[y][x]                     = v;
+      m[y][x + halfN]             = v + 2;
+      m[y + halfN][x]             = v + 3;
+      m[y + halfN][x + halfN]     = v + 1;
+    }
+  }
+  bayerMatrixCache.set(n, m);
+  return m;
+};
 
 const applyCanvasDither = (
   data: Uint8ClampedArray, w: number, h: number,
   style: 'bayer' | 'floyd-steinberg' | 'atkinson', scale: number,
+  matrixSize: number = 4,
 ): Uint8ClampedArray => {
   // Quantisation levels: scale 1→8 levels, scale 8→2 levels
   const levels = Math.max(2, Math.round(10 - scale * 1.0));
@@ -882,14 +906,23 @@ const applyCanvasDither = (
 
   // ── Bayer ordered dither ──────────────────────────────────────────────────
   if (style === 'bayer') {
+    const n      = Math.max(2, matrixSize);
+    const matrix = buildBayerMatrix(n);
+    const denom  = n * n;
     const out = new Uint8ClampedArray(data);
-    const cellSize = Math.max(1, scale);
+    // Scale the per-cell pixel footprint inversely with matrix size (4×4 is
+    // the baseline, so behaviour at the default matrix size is unchanged).
+    // Without this, a bigger matrix only grows the pattern's invisible repeat
+    // period — the visible dot size never shrinks, so 8×8/16×16 look almost
+    // identical to 4×4 at normal viewing size. This makes bigger matrices
+    // genuinely render finer, more detailed dithering.
+    const cellSize = Math.max(1, Math.round(scale * (4 / n)));
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const i  = (y * w + x) * 4;
-        const mx = Math.floor(x / cellSize) % 4;
-        const my = Math.floor(y / cellSize) % 4;
-        const t  = (BAYER_4[my][mx] / 16 - 0.5) * step; // signed offset
+        const mx = Math.floor(x / cellSize) % n;
+        const my = Math.floor(y / cellSize) % n;
+        const t  = (matrix[my][mx] / denom - 0.5) * step; // signed offset
         for (let c = 0; c < 3; c++) {
           out[i + c] = clamp(Math.round((data[i + c] + t) / step) * step);
         }
@@ -941,6 +974,368 @@ const applyCanvasDither = (
     out[i + 2] = clamp(Math.round(buf[i + 2]));
     out[i + 3] = data[i + 3];
   }
+  return out;
+};
+
+// ─── Duotone dithering ────────────────────────────────────────────────────────
+// Dithers on luminance only (single channel, not per-RGB), then maps the
+// quantised tone through two custom colors instead of grayscale. This is the
+// halftone screen-print / Risograph look — dot/error-diffusion density creates
+// the illusion of intermediate tones using only two flat ink colors.
+
+const applyDuotoneDither = (
+  data: Uint8ClampedArray, w: number, h: number,
+  style: 'bayer' | 'floyd-steinberg' | 'atkinson', scale: number,
+  shadowColor: string, highlightColor: string,
+  // levels: explicit tonal steps, independent of the dot-cell/scale size.
+  //   2 = classic pure two-ink halftone (single dot density curve).
+  //   3-8 = a richer duotone with visible intermediate density bands —
+  //   still just two flat colors, but the dithering shows more gradation.
+  levels: number = 2,
+  invert: boolean = false,
+  matrixSize: number = 4,
+): Uint8ClampedArray => {
+  const parseHex = (hex: string): [number, number, number] => {
+    const h = hex.replace('#', '');
+    return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0];
+  };
+  const [sr, sg, sb] = parseHex(shadowColor);
+  const [hr, hg, hb] = parseHex(highlightColor);
+
+  const lvl  = Math.max(2, Math.min(16, Math.round(levels)));
+  const step = 255 / (lvl - 1);
+
+  // Per-pixel luminance — this is what gets dithered/quantised, not RGB
+  const lum = new Float32Array(w * h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    lum[p] = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+  }
+
+  const out = new Uint8ClampedArray(data);
+  const mapTone = (rawT: number, i: number) => {
+    const t = invert ? 1 - rawT : rawT;
+    out[i]   = clamp(sr + (hr - sr) * t);
+    out[i+1] = clamp(sg + (hg - sg) * t);
+    out[i+2] = clamp(sb + (hb - sb) * t);
+  };
+
+  if (style === 'bayer') {
+    const n      = Math.max(2, matrixSize);
+    const matrix = buildBayerMatrix(n);
+    const denom  = n * n;
+    // Same 4×4-baseline inverse scaling as applyCanvasDither — see comment there.
+    const cellSize = Math.max(1, Math.round(scale * (4 / n)));
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p  = y * w + x, i = p * 4;
+        const mx = Math.floor(x / cellSize) % n;
+        const my = Math.floor(y / cellSize) % n;
+        const t  = (matrix[my][mx] / denom - 0.5) * step;
+        const q  = clamp(Math.round((lum[p] + t) / step) * step);
+        mapTone(q / 255, i);
+      }
+    }
+    return out;
+  }
+
+  // Error diffusion — propagated across the single luminance buffer
+  const buf = new Float32Array(lum);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x, i = p * 4;
+      const old = Math.max(0, Math.min(255, buf[p]));
+      const nw  = Math.round(old / step) * step;
+      buf[p] = nw;
+      const err = old - nw;
+      mapTone(nw / 255, i);
+
+      if (style === 'floyd-steinberg') {
+        if (x + 1 < w)               buf[p + 1]     += err * 7 / 16;
+        if (y + 1 < h) {
+          if (x > 0)                  buf[p + w - 1] += err * 3 / 16;
+                                      buf[p + w]     += err * 5 / 16;
+          if (x + 1 < w)             buf[p + w + 1] += err * 1 / 16;
+        }
+      } else {
+        // Atkinson — distributes 6/8 of error (lighter, more open dot pattern)
+        const e = err / 8;
+        if (x + 1 < w)               buf[p + 1]     += e;
+        if (x + 2 < w)               buf[p + 2]     += e;
+        if (y + 1 < h) {
+          if (x > 0)                  buf[p + w - 1] += e;
+                                      buf[p + w]     += e;
+          if (x + 1 < w)             buf[p + w + 1] += e;
+        }
+        if (y + 2 < h)               buf[p + 2 * w] += e;
+      }
+    }
+  }
+  return out;
+};
+
+// ─── ASCII dithering ───────────────────────────────────────────────────────────
+// Samples average color/luminance per grid cell and renders a monospace
+// character from a density ramp instead of a dot — classic terminal/code-art.
+// Text can only be rasterised via Canvas2D fillText, so this draws onto an
+// offscreen canvas and reads the pixels back out as a Uint8ClampedArray, which
+// keeps the same function shape as every other effect in this pipeline.
+// Reuses the duotone color state: when Duotone is on, characters are drawn in
+// a single ink color over a flat background (poster look). When off, each
+// character is colorized with its own cell's average source color — full
+// color ASCII mosaic on black, closer to classic BBS/demoscene art.
+
+const ASCII_RAMP = ' .:-=+*#%@'; // light → dark, 10 density steps
+
+const applyAsciiDither = (
+  data: Uint8ClampedArray, w: number, h: number,
+  charSize: number,  // px — independent of the shared dot/cell Scale, needs to
+                      // be legible (6px reads as static, 12-20px reads as glyphs)
+  brightness: number, // -100..100 — biases luminance before ramp mapping, so
+                       // shadow-heavy source images don't collapse into a flat
+                       // black void (the ramp's bottom two steps are near-empty)
+  duotone: boolean, shadowColor: string, highlightColor: string, invert: boolean,
+): Uint8ClampedArray => {
+  const cellPx = Math.max(4, Math.round(charSize));
+
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const octx = out.getContext('2d')!;
+
+  const bg = duotone ? (invert ? highlightColor : shadowColor) : '#000000';
+  octx.fillStyle = bg;
+  octx.fillRect(0, 0, w, h);
+
+  octx.font = `700 ${cellPx}px monospace`;
+  octx.textBaseline = 'top';
+
+  const cols = Math.ceil(w / cellPx);
+  const rows = Math.ceil(h / cellPx);
+
+  for (let ry = 0; ry < rows; ry++) {
+    const cy = ry * cellPx;
+    const cellH = Math.min(cellPx, h - cy);
+    if (cellH <= 0) continue;
+
+    for (let rx = 0; rx < cols; rx++) {
+      const cx = rx * cellPx;
+      const cellW = Math.min(cellPx, w - cx);
+      if (cellW <= 0) continue;
+
+      // Sample directly from the source pixel array (no getImageData calls
+      // per cell — those are expensive). Subsample large cells with a stride
+      // so bigger character sizes don't cost proportionally more.
+      let rSum = 0, gSum = 0, bSum = 0, n = 0;
+      const strideX = Math.max(1, Math.floor(cellW / 4));
+      const strideY = Math.max(1, Math.floor(cellH / 4));
+      for (let y = 0; y < cellH; y += strideY) {
+        for (let x = 0; x < cellW; x += strideX) {
+          const i = ((cy + y) * w + (cx + x)) * 4;
+          rSum += data[i]; gSum += data[i + 1]; bSum += data[i + 2];
+          n++;
+        }
+      }
+      if (n === 0) continue;
+      const ar = rSum / n, ag = gSum / n, ab = bSum / n;
+      // Brightness bias applied in 0-255 space before normalising — pulls
+      // shadow regions up into visible glyph territory instead of leaving
+      // them as flat background with zero dot/character texture.
+      const lumRaw = Math.max(0, Math.min(255, ar * 0.299 + ag * 0.587 + ab * 0.114 + brightness));
+      const lum = lumRaw / 255;
+      const t = invert ? 1 - lum : lum;
+
+      const idx   = Math.min(ASCII_RAMP.length - 1, Math.floor(t * ASCII_RAMP.length));
+      const glyph = ASCII_RAMP[idx];
+      if (glyph === ' ') continue; // skip drawing — leaves the background showing
+
+      octx.fillStyle = duotone
+        ? (invert ? shadowColor : highlightColor)
+        : `rgb(${Math.round(ar)},${Math.round(ag)},${Math.round(ab)})`;
+      octx.fillText(glyph, cx, cy);
+    }
+  }
+
+  return new Uint8ClampedArray(octx.getImageData(0, 0, w, h).data);
+};
+
+// ─── CMYK Separation ───────────────────────────────────────────────────────────
+// Converts the source to CMYK and renders each of the four plates as its own
+// halftone dot layer at the classic print-production screen angles (C 15°,
+// M 75°, Y 0°, K 45° — staggered specifically to avoid moiré between plates,
+// exactly as real offset-press separations are set up).
+//
+// Dots are rasterised directly into a Uint8ClampedArray (bounding-box +
+// distance-check per circle) rather than via Canvas2D arc()/fill() calls.
+// Canvas draw calls carry real per-call overhead (path tessellation,
+// compositing) — at four full-canvas dot-grid passes that overhead was
+// enough to stall the main thread for seconds. Plain array writes are the
+// same technique every other effect in this pipeline already uses and cost
+// a fraction of the time for the same visual result.
+
+const applyCmykSeparation = (
+  data: Uint8ClampedArray, w: number, h: number,
+  dotSize: number, spacing: number,
+): Uint8ClampedArray => {
+  // Per-pixel CMYK conversion — naive/non-color-managed, which is standard
+  // and sufficient for a stylistic print-reproduction effect like this.
+  const C = new Float32Array(w * h), M = new Float32Array(w * h);
+  const Y = new Float32Array(w * h), K = new Float32Array(w * h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    const r = data[i] / 255, g = data[i+1] / 255, b = data[i+2] / 255;
+    let c = 1 - r, m = 1 - g, y = 1 - b;
+    const k = Math.min(c, m, y);
+    if (k < 1) { c = (c - k) / (1 - k); m = (m - k) / (1 - k); y = (y - k) / (1 - k); }
+    else { c = 0; m = 0; y = 0; }
+    C[p] = c; M[p] = m; Y[p] = y; K[p] = k;
+  }
+
+  // Output starts as white paper
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < out.length; i += 4) {
+    out[i] = 255; out[i+1] = 255; out[i+2] = 255; out[i+3] = 255;
+  }
+
+  const sample = (arr: Float32Array) => (x: number, y: number) => {
+    const px = Math.max(0, Math.min(w - 1, Math.round(x)));
+    const py = Math.max(0, Math.min(h - 1, Math.round(y)));
+    return arr[py * w + px];
+  };
+
+  // One plate = one rotated dot-grid pass. Each dot is rasterised straight
+  // into `out` with a multiply blend, so overprinting plates darken exactly
+  // like real ink layers — same math as the canvas version, no canvas API.
+  const drawPlate = (getAmount: (x: number, y: number) => number, ink: [number, number, number], angleDeg: number) => {
+    const [ir, ig, ib] = ink;
+    const rad  = (angleDeg * Math.PI) / 180;
+    const cos  = Math.cos(rad), sin = Math.sin(rad);
+    const cx   = w / 2, cy = h / 2;
+    const diag = Math.sqrt(w * w + h * h);
+    const half = diag / 2;
+
+    for (let v = -half; v <= half; v += spacing) {
+      for (let u = -half; u <= half; u += spacing) {
+        const sx = cx + u * cos - v * sin;
+        const sy = cy + u * sin + v * cos;
+        // Slightly loose bounds (±dotSize) so dots straddling the edge don't clip
+        if (sx < -dotSize || sx >= w + dotSize || sy < -dotSize || sy >= h + dotSize) continue;
+
+        const amt = getAmount(Math.max(0, Math.min(w - 1, sx)), Math.max(0, Math.min(h - 1, sy)));
+        const r = amt * dotSize;
+        if (r <= 0.3) continue;
+
+        const r2   = r * r;
+        const minX = Math.max(0, Math.floor(sx - r)), maxX = Math.min(w - 1, Math.ceil(sx + r));
+        const minY = Math.max(0, Math.floor(sy - r)), maxY = Math.min(h - 1, Math.ceil(sy + r));
+        for (let py = minY; py <= maxY; py++) {
+          const dy = py - sy;
+          for (let px = minX; px <= maxX; px++) {
+            const dx = px - sx;
+            if (dx * dx + dy * dy > r2) continue;
+            const oi = (py * w + px) * 4;
+            out[oi]   = clamp(out[oi]   * ir / 255);
+            out[oi+1] = clamp(out[oi+1] * ig / 255);
+            out[oi+2] = clamp(out[oi+2] * ib / 255);
+          }
+        }
+      }
+    }
+  };
+
+  drawPlate(sample(C), [0, 174, 239], 15);   // cyan    #00AEEF
+  drawPlate(sample(M), [236, 0, 140], 75);   // magenta #EC008C
+  drawPlate(sample(Y), [255, 242, 0], 0);    // yellow  #FFF200
+  drawPlate(sample(K), [26, 25, 23], 45);    // black (warm-black, matches HeroKit's ink tone)
+
+  return out;
+};
+
+// ─── Halftone ───────────────────────────────────────────────────────────────────
+// Was previously a separate CSS mix-blend-mode:multiply overlay canvas that
+// sampled the raw source image directly — entirely outside the main pixel
+// pipeline, which is why it never respected Effect Mask (or reacted to any
+// other effect stacked before it, like Color Grade). Ported to pure array
+// compositing using the same bounding-box circle-stamp technique as CMYK
+// Separation: reads from `data` (whatever the pipeline has produced so far),
+// multiply-blends the ink color in directly, no Canvas2D draw calls.
+
+const applyHalftonePixels = (
+  data: Uint8ClampedArray, w: number, h: number,
+  pattern: 'dot' | 'line' | 'crosshatch',
+  dotSize: number, spacing: number, angle: number,
+  color: string, opacity: number, invert: boolean,
+): Uint8ClampedArray => {
+  const parseHex = (hex: string): [number, number, number] => {
+    const h2 = hex.replace('#', '');
+    return [parseInt(h2.slice(0,2),16)||0, parseInt(h2.slice(2,4),16)||0, parseInt(h2.slice(4,6),16)||0];
+  };
+  const [cr, cg, cb] = parseHex(color);
+  const out = new Uint8ClampedArray(data);
+
+  const getBrightness = (x: number, y: number): number => {
+    const px = Math.max(0, Math.min(w - 1, Math.round(x)));
+    const py = Math.max(0, Math.min(h - 1, Math.round(y)));
+    const i  = (py * w + px) * 4;
+    return (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114) / 255;
+  };
+
+  // Multiply-blends the ink color into `out` at full coverage, scaled by
+  // opacity — matches the old CSS mix-blend-mode: multiply behaviour.
+  const drawCircle = (cx: number, cy: number, r: number) => {
+    if (r <= 0.2) return;
+    const minX = Math.max(0, Math.floor(cx - r)), maxX = Math.min(w - 1, Math.ceil(cx + r));
+    const minY = Math.max(0, Math.floor(cy - r)), maxY = Math.min(h - 1, Math.ceil(cy + r));
+    const r2 = r * r;
+    for (let py = minY; py <= maxY; py++) {
+      const dy = py - cy;
+      for (let px = minX; px <= maxX; px++) {
+        const dx = px - cx;
+        if (dx * dx + dy * dy > r2) continue;
+        const i = (py * w + px) * 4;
+        out[i]   = out[i]   * (1 - opacity) + (out[i]   * cr / 255) * opacity;
+        out[i+1] = out[i+1] * (1 - opacity) + (out[i+1] * cg / 255) * opacity;
+        out[i+2] = out[i+2] * (1 - opacity) + (out[i+2] * cb / 255) * opacity;
+      }
+    }
+  };
+
+  if (pattern === 'dot') {
+    for (let row = 0; row * spacing <= h + spacing; row++) {
+      const yc   = row * spacing;
+      const xOff = row % 2 === 1 ? spacing / 2 : 0;
+      for (let col = -1; col * spacing <= w + spacing; col++) {
+        const xc = col * spacing + xOff;
+        if (xc < -dotSize || xc > w + dotSize || yc < -dotSize || yc > h + dotSize) continue;
+        const brightness = getBrightness(xc, yc);
+        const t = invert ? brightness : 1 - brightness;
+        drawCircle(xc, yc, Math.max(0, t * dotSize));
+      }
+    }
+  } else {
+    // Line / crosshatch — sample a rotated grid, stamping small overlapping
+    // circles along each line (a "stamp brush" approach) instead of rotating
+    // the whole canvas transform, so this stays pure array math throughout.
+    const angles = pattern === 'crosshatch' ? [angle, angle + 90] : [angle];
+    angles.forEach(a => {
+      const rad  = (a * Math.PI) / 180;
+      const cos  = Math.cos(rad), sin = Math.sin(rad);
+      const cx   = w / 2, cy = h / 2;
+      const diag = Math.sqrt(w * w + h * h);
+      const half = diag / 2;
+      const lineStep = Math.max(1.5, spacing / 5);
+
+      for (let v = -half; v <= half; v += spacing) {
+        for (let u = -half; u <= half; u += lineStep) {
+          const sx = cx + u * cos - v * sin;
+          const sy = cy + u * sin + v * cos;
+          if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
+          const brightness = getBrightness(sx, sy);
+          const t = invert ? brightness : 1 - brightness;
+          const thickness = Math.max(0, t * dotSize);
+          if (thickness > 0.3) drawCircle(sx, sy, thickness / 2);
+        }
+      }
+    });
+  }
+
   return out;
 };
 
@@ -1189,6 +1584,82 @@ const applySplitTone = (
   return out;
 };
 
+// ─── Riso Print ─────────────────────────────────────────────────────────────
+// Simulates Risograph duplicator printing: two flat spot-color ink layers,
+// each independently halftone-dithered from the source luminance, offset from
+// each other by a few pixels (real riso masters never register perfectly),
+// and multiply-composited onto white paper (overlap darkens, like real ink
+// overprint). Grain jitters the dither threshold near dot edges so coverage
+// looks organic rather than perfectly crisp — real riso ink deposit varies.
+
+const applyRisoPrint = (
+  data: Uint8ClampedArray, w: number, h: number,
+  scale: number, color1: string, color2: string,
+  offset: number, grain: number,
+): Uint8ClampedArray => {
+  const parseHex = (hex: string): [number, number, number] => {
+    const h = hex.replace('#', '');
+    return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0];
+  };
+  const [r1, g1, b1] = parseHex(color1);
+  const [r2, g2, b2] = parseHex(color2);
+
+  // Per-pixel luminance from the source — this is what each ink plate dithers
+  const lum = new Float32Array(w * h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    lum[p] = data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114;
+  }
+  const sampleLum = (x: number, y: number): number => {
+    const px = Math.max(0, Math.min(w - 1, Math.round(x)));
+    const py = Math.max(0, Math.min(h - 1, Math.round(y)));
+    return lum[py * w + px];
+  };
+
+  const cellSize = Math.max(1, Math.round(scale));
+  const matrix   = buildBayerMatrix(4);
+  const denom    = 16;
+  const jitterAmt = (grain / 100) * 0.35;
+
+  // Layers offset diagonally in opposite directions — visible misregistration
+  const dx1 = -offset, dy1 = -offset * 0.6;
+  const dx2 =  offset, dy2 =  offset * 0.6;
+
+  const out = new Uint8ClampedArray(data.length);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i  = (y * w + x) * 4;
+      const mx = Math.floor(x / cellSize) % 4;
+      const my = Math.floor(y / cellSize) % 4;
+      const thresholdA = matrix[my][mx] / denom;
+      // Half-cell phase shift for layer B — different screen phase per plate,
+      // like real CMYK/riso plates avoid identical dot alignment (moiré).
+      const mx2 = Math.floor((x + cellSize / 2) / cellSize) % 4;
+      const my2 = Math.floor((y + cellSize / 2) / cellSize) % 4;
+      const thresholdB = matrix[my2][mx2] / denom;
+
+      const jA = (Math.random() - 0.5) * jitterAmt;
+      const jB = (Math.random() - 0.5) * jitterAmt;
+
+      const darknessA = 1 - sampleLum(x + dx1, y + dy1) / 255;
+      const darknessB = 1 - sampleLum(x + dx2, y + dy2) / 255;
+      const inkA = (darknessA + jA) > thresholdA;
+      const inkB = (darknessB + jB) > thresholdB;
+
+      // Multiply blend onto white paper — sequential multiplies simulate ink overprint
+      let r = 255, g = 255, b = 255;
+      if (inkA) { r = r * r1 / 255; g = g * g1 / 255; b = b * b1 / 255; }
+      if (inkB) { r = r * r2 / 255; g = g * g2 / 255; b = b * b2 / 255; }
+
+      out[i]   = clamp(r);
+      out[i+1] = clamp(g);
+      out[i+2] = clamp(b);
+      out[i+3] = data[i+3];
+    }
+  }
+  return out;
+};
+
 // ─── Chromatic Aberration ────────────────────────────────────────────────────
 // Radial CA: R channel expands outward from centre, B contracts inward.
 // Effect is zero at the centre and maximum at the corners — exactly like a real lens.
@@ -1221,6 +1692,73 @@ const applyCA = (
       out[di + 2] = bilinearSample(data, w, h, bx, by, 2); // B — pushed in
       out[di + 3] = data[di + 3];
     }
+  }
+  return out;
+};
+
+// ─── Effect Mask ────────────────────────────────────────────────────────────────
+// Restricts the entire active effect stack to a user-painted region — outside
+// it, the original unprocessed image shows through. Strokes are stored as
+// resolution-independent relative coordinates (not a bitmap — keeps state
+// small and avoids the localStorage bloat that base64 image data caused
+// elsewhere), then rasterised at the current render size on every frame.
+
+const rasterizeEffectMask = (
+  strokes: import('../types').MaskStroke[], w: number, h: number, feather: number,
+): Uint8ClampedArray => {
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const scale = Math.min(w, h);
+  strokes.forEach(stroke => {
+    const r = stroke.size * scale;
+    if (stroke.points.length === 1) {
+      const p = stroke.points[0];
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (stroke.points.length > 1) {
+      ctx.lineWidth = r * 2;
+      ctx.beginPath();
+      ctx.moveTo(stroke.points[0].x * w, stroke.points[0].y * h);
+      for (let i = 1; i < stroke.points.length; i++) {
+        ctx.lineTo(stroke.points[i].x * w, stroke.points[i].y * h);
+      }
+      ctx.stroke();
+    }
+  });
+
+  if (feather > 0) {
+    const blurred = document.createElement('canvas');
+    blurred.width = w; blurred.height = h;
+    const bctx = blurred.getContext('2d')!;
+    bctx.filter = `blur(${feather}px)`;
+    bctx.drawImage(canvas, 0, 0);
+    return new Uint8ClampedArray(bctx.getImageData(0, 0, w, h).data);
+  }
+  return new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
+};
+
+// Blends `processed` (fully effects-applied) against `original` per-pixel
+// using the mask's alpha channel as a feathered stencil — 0 = original shows,
+// 255 = processed shows, anything between is a soft blend at painted edges.
+const compositeEffectMask = (
+  processed: Uint8ClampedArray, original: Uint8ClampedArray,
+  maskBuf: Uint8ClampedArray, invert: boolean,
+): Uint8ClampedArray => {
+  const out = new Uint8ClampedArray(processed.length);
+  for (let i = 0; i < processed.length; i += 4) {
+    let t = maskBuf[i + 3] / 255;
+    if (invert) t = 1 - t;
+    out[i]     = original[i]     + (processed[i]     - original[i])     * t;
+    out[i + 1] = original[i + 1] + (processed[i + 1] - original[i + 1]) * t;
+    out[i + 2] = original[i + 2] + (processed[i + 2] - original[i + 2]) * t;
+    out[i + 3] = processed[i + 3];
   }
   return out;
 };
@@ -1407,8 +1945,37 @@ interface ProcessedImageProps {
   edgeGlowEnabled: boolean; edgeGlowColor: string; edgeGlowIntensity: number; edgeGlowBloom: number; edgeGlowDarken: number;
   splitToneEnabled: boolean; splitToneShadowColor: string; splitToneHighlightColor: string; splitToneStrength: number; splitToneBalance: number;
   caStrength: number;
-  canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
+  canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
+  ditherDuotoneEnabled: boolean;
+  ditherDuotoneShadowColor: string;
+  ditherDuotoneHighlightColor: string;
+  ditherDuotoneLevels: number;
+  ditherDuotoneInvert: boolean;
+  ditherAsciiCharSize: number;
+  ditherAsciiBrightness: number;
+  ditherMatrixSize: number;
+  risoEnabled: boolean;
+  risoScale: number;
+  risoColor1: string;
+  risoColor2: string;
+  risoOffset: number;
+  risoGrain: number;
+  cmykSeparationEnabled: boolean;
+  cmykDotSize: number;
+  cmykSpacing: number;
+  halftoneEnabled: boolean;
+  halftonePattern: 'dot' | 'line' | 'crosshatch';
+  halftoneDotSize: number;
+  halftoneSpacing: number;
+  halftoneAngle: number;
+  halftoneColor: string;
+  halftoneOpacity: number;
+  halftoneInvert: boolean;
+  effectMaskEnabled: boolean;
+  effectMaskStrokes: import('../types').MaskStroke[];
+  effectMaskFeather: number;
+  effectMaskInvert: boolean;
   imageGlitchEnabled: boolean;
   imageGlitchStyle: GlitchStyle;
   imageGlitchIntensity: number;
@@ -1444,6 +2011,14 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
+    ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
+    ditherDuotoneLevels, ditherDuotoneInvert,
+    ditherAsciiCharSize, ditherAsciiBrightness,
+    ditherMatrixSize,
+    risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
+    cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
+    effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
     warpEnabled, warpStrength, warpScale, warpOctaves, warpStyle,
@@ -1512,9 +2087,25 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (warpEnabled)         processed = applyDisplacementWarp(processed, w, h, warpStrength, warpScale, warpOctaves, warpStyle);
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
-          if (canvasDitherStyle !== 'none') processed = applyCanvasDither(processed, w, h, canvasDitherStyle as 'bayer'|'floyd-steinberg'|'atkinson', canvasDitherScale);
+          if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
+          if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
+          if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert);
+          if (canvasDitherStyle === 'ascii') {
+            processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
+          } else if (canvasDitherStyle !== 'none') {
+            processed = ditherDuotoneEnabled
+              ? applyDuotoneDither(processed, w, h, canvasDitherStyle as 'bayer'|'floyd-steinberg'|'atkinson', canvasDitherScale, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneLevels, ditherDuotoneInvert, ditherMatrixSize)
+              : applyCanvasDither(processed, w, h, canvasDitherStyle as 'bayer'|'floyd-steinberg'|'atkinson', canvasDitherScale, ditherMatrixSize);
+          }
           // CA last — applied over the fully processed image, strongest at corners
           if (caStrength > 0)      processed = applyCA(processed, w, h, caStrength);
+          // Effect Mask — genuinely last: composites the fully-processed result
+          // against the pristine `data` buffer, restricting every effect above
+          // to the painted region in one pass rather than gating each individually.
+          if (effectMaskEnabled && effectMaskStrokes.length > 0) {
+            const maskBuf = rasterizeEffectMask(effectMaskStrokes, w, h, effectMaskFeather);
+            processed = compositeEffectMask(processed, data, maskBuf, effectMaskInvert);
+          }
           offCtx.putImageData(new ImageData(processed, w, h), 0, 0);
 
           // Step 3: motion blur (multi-pass accumulation)
@@ -1551,6 +2142,14 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
+      ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
+      ditherDuotoneLevels, ditherDuotoneInvert,
+      ditherAsciiCharSize, ditherAsciiBrightness,
+      ditherMatrixSize,
+      risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
+      cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+      halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
+      effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
       dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
       warpEnabled, warpStrength, warpScale, warpOctaves, warpStyle,
@@ -1570,108 +2169,6 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-// ─── Canvas2D: Halftone ───────────────────────────────────────────────────────
-
-interface HalftoneProps {
-  imageUrl?: string;
-  dotSize: number;
-  spacing: number;
-  color: string;
-  opacity: number;
-  invert: boolean;
-}
-
-const HalftoneCanvas: React.FC<HalftoneProps> = ({ imageUrl, dotSize, spacing, color, opacity, invert }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const wrapRef   = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const wrap   = wrapRef.current;
-    if (!canvas || !wrap) return;
-
-    let cancelled = false;
-
-    const drawDots = (getBrightness: (x: number, y: number) => number, w: number, h: number) => {
-      if (cancelled) return;
-      canvas.width  = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = opacity;
-
-      for (let row = 0; row * spacing <= h + spacing; row++) {
-        const yc   = row * spacing;
-        const xOff = row % 2 === 1 ? spacing / 2 : 0;
-        for (let col = -1; col * spacing <= w + spacing; col++) {
-          const xc = col * spacing + xOff;
-          const brightness = getBrightness(xc, yc);
-          const t = invert ? brightness : 1 - brightness;
-          const r = Math.max(0, t * dotSize);
-          if (r > 0.2) {
-            ctx.beginPath();
-            ctx.arc(xc, yc, r, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-      }
-      ctx.globalAlpha = 1;
-    };
-
-    const render = () => {
-      const w = wrap.clientWidth  || window.innerWidth;
-      const h = wrap.clientHeight || window.innerHeight;
-
-      if (imageUrl) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous'; // prevent CORS canvas taint on external images
-        img.onload = () => {
-          if (cancelled) return;
-
-          // Mirror CSS object-cover: scale to cover, then centre-crop
-          const scale   = Math.max(w / img.width, h / img.height);
-          const sw      = img.width  * scale;
-          const sh      = img.height * scale;
-          const sx      = (w - sw) / 2;
-          const sy      = (h - sh) / 2;
-
-          const off    = document.createElement('canvas');
-          off.width    = w;
-          off.height   = h;
-          const offCtx = off.getContext('2d')!;
-          offCtx.drawImage(img, sx, sy, sw, sh);   // ← object-cover positioning
-          const { data } = offCtx.getImageData(0, 0, w, h);
-
-          const getBrightness = (x: number, y: number) => {
-            const px = Math.max(0, Math.min(w - 1, Math.round(x)));
-            const py = Math.max(0, Math.min(h - 1, Math.round(y)));
-            const i  = (py * w + px) * 4;
-            return (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-          };
-
-          drawDots(getBrightness, w, h);
-        };
-        img.src = imageUrl;
-      } else {
-        drawDots(() => 0.55, w, h);
-      }
-    };
-
-    render();
-    const ro = new ResizeObserver(render);
-    ro.observe(wrap);
-    return () => { cancelled = true; ro.disconnect(); };
-  }, [imageUrl, dotSize, spacing, color, opacity, invert]);
-
-  return (
-    <div ref={wrapRef} className="absolute inset-0 pointer-events-none z-20">
-      <canvas ref={canvasRef} className="w-full h-full" style={{ mixBlendMode: 'multiply' }} />
     </div>
   );
 };
@@ -1804,9 +2301,16 @@ interface CanvasProps {
 
 const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
   const {
-    bgColor, imageUrl, videoUrl,
+    bgColor, maskColor, imageUrl, videoUrl,
     imageFilter, imageBlur, imageMask, imageOpacity, tintColor, chromaticAberration,
     ditherStyle, ditherScale,
+    ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
+    ditherDuotoneLevels, ditherDuotoneInvert,
+    ditherAsciiCharSize, ditherAsciiBrightness,
+    ditherMatrixSize,
+    risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
+    cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     atmosphereStyle, meshColors,
     meshSpeed, meshComplexity, meshTurbulence, meshZoom, meshContrast, meshFrequency,
     kineticSpeed, kineticTrailLength, kineticChaos,
@@ -1819,6 +2323,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     vignetteStrength,
     effectsOpacity,
     halftoneEnabled, halftoneDotSize, halftoneSpacing, halftoneColor, halftoneInvert,
+    halftonePattern, halftoneAngle, halftoneOpacity,
     layers,
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
@@ -1850,7 +2355,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     (imageGlitchEnabled ?? false) ||
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
-    (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false)
+    (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) ||
+    (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false)
   );
 
   const hasSource = !!(imageUrl || videoUrl);
@@ -1908,6 +2414,14 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
       className="absolute inset-0 overflow-hidden"
       style={{ backgroundColor: bgColor }}
     >
+      {/* Mask reveal backdrop — only rendered when a mask is active. Sits behind
+          the masked image so its fade reveals maskColor, not the empty-canvas
+          bgColor (those are deliberately separate — bgColor stays theme-light,
+          maskColor defaults dark since that's what most photographic fades need). */}
+      {imageMask !== 'none' && (
+        <div className="absolute inset-0 z-0" style={{ backgroundColor: maskColor }} />
+      )}
+
       {/* Layer 1: Source image / video */}
       {hasSource && (
         <div className="absolute inset-0 z-0" style={{ opacity: imageOpacity, ...maskStyle }}>
@@ -1924,8 +2438,37 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 edgeGlowEnabled={edgeGlowEnabled ?? false} edgeGlowColor={edgeGlowColor ?? '#00ffff'} edgeGlowIntensity={edgeGlowIntensity ?? 60} edgeGlowBloom={edgeGlowBloom ?? 8} edgeGlowDarken={edgeGlowDarken ?? 0.5}
                 splitToneEnabled={splitToneEnabled ?? false} splitToneShadowColor={splitToneShadowColor ?? '#1a237e'} splitToneHighlightColor={splitToneHighlightColor ?? '#ff6d00'} splitToneStrength={splitToneStrength ?? 60} splitToneBalance={splitToneBalance ?? 0}
                 caStrength={chromaticAberration ?? 0}
-                canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson')}
+                canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}
+                ditherDuotoneEnabled={ditherDuotoneEnabled ?? false}
+                ditherDuotoneShadowColor={ditherDuotoneShadowColor ?? '#10193f'}
+                ditherDuotoneHighlightColor={ditherDuotoneHighlightColor ?? '#f4e4b8'}
+                ditherDuotoneLevels={ditherDuotoneLevels ?? 2}
+                ditherDuotoneInvert={ditherDuotoneInvert ?? false}
+                ditherAsciiCharSize={ditherAsciiCharSize ?? 14}
+                ditherAsciiBrightness={ditherAsciiBrightness ?? 20}
+                ditherMatrixSize={ditherMatrixSize ?? 4}
+                risoEnabled={risoEnabled ?? false}
+                risoScale={risoScale ?? 4}
+                risoColor1={risoColor1 ?? '#ff48b0'}
+                risoColor2={risoColor2 ?? '#0078bf'}
+                risoOffset={risoOffset ?? 3}
+                risoGrain={risoGrain ?? 40}
+                cmykSeparationEnabled={cmykSeparationEnabled ?? false}
+                cmykDotSize={cmykDotSize ?? 4}
+                cmykSpacing={cmykSpacing ?? 8}
+                halftoneEnabled={halftoneEnabled ?? false}
+                halftonePattern={halftonePattern ?? 'dot'}
+                halftoneDotSize={halftoneDotSize ?? 4}
+                halftoneSpacing={halftoneSpacing ?? 8}
+                halftoneAngle={halftoneAngle ?? 45}
+                halftoneColor={halftoneColor ?? '#000000'}
+                halftoneOpacity={halftoneOpacity ?? 1}
+                halftoneInvert={halftoneInvert ?? false}
+                effectMaskEnabled={effectMaskEnabled ?? false}
+                effectMaskStrokes={effectMaskStrokes ?? []}
+                effectMaskFeather={effectMaskFeather ?? 20}
+                effectMaskInvert={effectMaskInvert ?? false}
                 imageGlitchEnabled={imageGlitchEnabled ?? false}
                 imageGlitchStyle={(imageGlitchStyle ?? 'digital') as GlitchStyle}
                 imageGlitchIntensity={imageGlitchIntensity ?? 40}
@@ -2038,17 +2581,9 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
       {/* Layer 5: Film grain — canvas-rendered so html-to-image exports it correctly */}
       {noiseOpacity > 0 && <NoiseCanvas opacity={noiseOpacity} color={noiseColor} />}
 
-      {/* Layer 6: Halftone */}
-      {halftoneEnabled && (
-        <HalftoneCanvas
-          imageUrl={imageUrl}
-          dotSize={halftoneDotSize}
-          spacing={halftoneSpacing}
-          color={halftoneColor}
-          opacity={state.halftoneOpacity ?? 1}
-          invert={halftoneInvert}
-        />
-      )}
+      {/* Halftone now runs inside the pixel pipeline (see applyHalftonePixels)
+          so it participates in Effect Mask like every other effect — it's no
+          longer rendered as a separate overlay layer here. */}
 
       {/* Layer 7: Vignette */}
       {vignetteStrength > 0 && (

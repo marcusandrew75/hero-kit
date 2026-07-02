@@ -21,7 +21,7 @@ export type ImageFilter = 'none' | 'grayscale' | 'desaturate' | 'tint' | 'duoton
 
 export type ImageMask = 'none' | 'fade-bottom' | 'fade-left' | 'fade-right' | 'radial' | 'soft-edges';
 
-export type DitherStyle = 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson';
+export type DitherStyle = 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
 
 export type GenerativePreset = 'orbital' | 'particles' | 'matrix' | 'fluid-grid' | 'noise-field';
 
@@ -39,7 +39,8 @@ export interface MeshColors {
 
 export interface BackgroundState {
   // Source
-  bgColor: string;
+  bgColor: string;      // empty-canvas backdrop — matches the app's light theme
+  maskColor: string;    // color revealed through Mask fades — independent of bgColor
   imageUrl?: string;
   videoUrl?: string;
 
@@ -52,6 +53,14 @@ export interface BackgroundState {
   chromaticAberration: number; // 0–20 px RGB shift
   ditherStyle: DitherStyle;
   ditherScale: number;
+  ditherDuotoneEnabled: boolean;
+  ditherDuotoneShadowColor: string;
+  ditherDuotoneHighlightColor: string;
+  ditherDuotoneLevels: number; // 2–8 tonal steps, independent of dot/cell Scale
+  ditherDuotoneInvert: boolean;
+  ditherAsciiCharSize: number;   // 6–32px, independent of the shared dot/cell Scale
+  ditherAsciiBrightness: number; // -100 to 100, biases luminance before ramp mapping
+  ditherMatrixSize: number;      // 2, 4, 8 or 16 — Bayer ordered-dither pattern coarseness
 
   // Atmosphere
   atmosphereStyle: AtmosphereStyle;
@@ -98,6 +107,8 @@ export interface BackgroundState {
   halftoneColor: string;
   halftoneOpacity: number;
   halftoneInvert: boolean;
+  halftonePattern: 'dot' | 'line' | 'crosshatch';
+  halftoneAngle: number; // degrees — screen angle for line/crosshatch, like CMYK plate angles
 
   // Color Grade (includes vintage presets)
   colorGradeEnabled: boolean;
@@ -124,6 +135,19 @@ export interface BackgroundState {
   splitToneHighlightColor: string;
   splitToneStrength: number;  // 0–100
   splitToneBalance: number;   // -50 to +50
+
+  // Riso Print — duotone ink layers with misregistration + grain, mimicking Risograph
+  risoEnabled: boolean;
+  risoColor1: string;    // first ink plate color
+  risoColor2: string;    // second ink plate color
+  risoScale: number;     // 1–16, halftone dot/cell size for each ink layer
+  risoOffset: number;    // 0–10px, misregistration between the two ink layers
+  risoGrain: number;     // 0–100, organic ink-edge noise
+
+  // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
+  cmykSeparationEnabled: boolean;
+  cmykDotSize: number;   // 1–12
+  cmykSpacing: number;   // 3–30
 
   // Image layers (composited on top of primary imageUrl)
   layers: ImageLayer[];
@@ -165,6 +189,15 @@ export interface BackgroundState {
   spotBlurEnabled: boolean;
   spotBlurRadius: number;        // background blur px (5–40)
   blurSpots: BlurSpot[];
+
+  // Effect Mask — paint a region to restrict the whole active effect stack to;
+  // everywhere else stays as the original, unprocessed image.
+  effectMaskEnabled: boolean;
+  effectMaskStrokes: MaskStroke[];
+  effectMaskBrushSize: number;   // 0–1 relative to min(w,h)
+  effectMaskFeather: number;     // 0–100 px blur applied to the mask edge
+  effectMaskInvert: boolean;
+  effectMaskShowOverlay: boolean;
 }
 
 export type LayerBlendMode = 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'difference' | 'luminosity';
@@ -181,5 +214,10 @@ export interface BlurSpot {
   x: number;      // 0–1 relative to canvas width
   y: number;      // 0–1 relative to canvas height
   radius: number; // 0–1 relative to min(w,h)
+}
+
+export interface MaskStroke {
+  points: { x: number; y: number }[]; // 0–1 relative coords — resolution-independent, no bitmap stored
+  size: number;                        // brush radius, 0–1 relative to min(w,h)
 }
 

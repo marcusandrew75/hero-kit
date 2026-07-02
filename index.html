@@ -22,6 +22,10 @@
     </script>
 
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <!-- Share Tech Mono — hardware LCD display font for value readouts -->
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <!-- Playfair Display — elegant serif option for Preview in Context headlines -->
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
 
     <!-- Phosphor Icons -->
     <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" crossorigin="anonymous">
@@ -67,10 +71,285 @@
         border-radius: 50%;
         cursor: pointer;
       }
+
+      /* ── Premium Tactile Controls for HeroKit ─────────────────────────── */
+
+      /* 1. 3D Knob / Dial body
+            The arc track and position indicator are drawn in SVG.
+            This class styles only the physical knob body + the ::after notch line.
+            --rotation is set inline by React to match the SVG value arc. */
+      .knob {
+        width: 52px;
+        height: 52px;
+        border-radius: 9999px;
+        background: radial-gradient(circle at 35% 30%, #f8f6f2 0%, #e8e4d8 50%, #d4cfc0 100%);
+        box-shadow:
+          0 6px 12px -2px rgb(0 0 0 / 0.25),
+          inset 0 3px 6px  rgb(255 255 255 / 0.9),
+          inset 0 -4px 8px rgb(0 0 0 / 0.2),
+          0 1px 2px        rgb(0 0 0 / 0.1);
+        position: relative;
+        cursor: ns-resize;
+        transition: transform 0.1s ease;
+      }
+      .knob:active { transform: scale(0.96); }
+      /* Small knob variant */
+      .knob.sm { width: 36px; height: 36px; }
+
+      /* Position indicator — orange pip near the knob edge, like the copper dot
+         on Braun hardware. Uses the orbit trick: translate(-50%,-50%) centres the
+         dot on the knob centre, rotate() turns the coordinate frame, then
+         translateY(-Npx) moves the dot outward along the rotated axis.           */
+      .knob::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #e84320;
+        box-shadow: 0 0 5px rgba(232,67,32,0.60), 0 1px 2px rgba(0,0,0,0.30);
+        transform: translate(-50%, -50%) rotate(var(--rotation, -135deg)) translateY(-20px);
+        transition: transform 0s;
+      }
+      /* sm variant — smaller dot, shorter orbit radius */
+      .knob.sm::after {
+        width: 4px;
+        height: 4px;
+        transform: translate(-50%, -50%) rotate(var(--rotation, -135deg)) translateY(-13px);
+      }
+
+      /* 2. Fully-rounded toggle track
+            Three things are required for a true pill shape on a <button>:
+            a) appearance: none !important — Tailwind preflight forces -webkit-appearance: button
+               which prevents border-radius from rendering as a pill in WebKit.
+            b) overflow: hidden — clips the lever inside the pill and forces the browser
+               to respect border-radius for all painted children.
+            c) padding: 0 — UA stylesheet may add padding that shifts the lever. */
+      .toggle {
+        -webkit-appearance: none !important;
+        appearance: none !important;
+        padding: 0;
+        overflow: hidden;          /* ← the critical clip */
+        position: relative;
+        display: inline-block;
+        width: 52px;
+        height: 28px;
+        background: #dedad1;
+        border-radius: 9999px;
+        border: 1.5px solid #c4c0b6;
+        box-shadow:
+          inset 0 2px 5px  rgb(0 0 0 / 0.18),
+          inset 0 1px 2px  rgb(0 0 0 / 0.10),
+          0 1px 0          rgb(255 255 255 / 0.7);
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .toggle.on {
+        background: #e84320;
+        border-color: #c7391c;
+        /* No outer glow — the lever glows instead */
+        box-shadow:
+          inset 0 2px 5px  rgb(0 0 0 / 0.25),
+          inset 0 1px 2px  rgb(0 0 0 / 0.15);
+      }
+      /* Raised lever / thumb */
+      .toggle .lever {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 20px;
+        height: 20px;
+        background: linear-gradient(145deg, #ffffff 0%, #e8e4dc 100%);
+        border-radius: 9999px;
+        box-shadow:
+          0 3px 7px  rgb(0 0 0 / 0.28),
+          0 1px 3px  rgb(0 0 0 / 0.18),
+          inset 0 1px 0 rgb(255 255 255 / 0.9);
+        transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                    box-shadow 0.2s ease;
+      }
+      .toggle.on .lever {
+        transform: translateX(24px);
+        /* Restrained orange glow — white ring keeps it clean, bloom at 40%
+           so multiple active toggles don't flood the panel with orange.     */
+        box-shadow:
+          0 0 0 2px    rgba(255, 255, 255, 0.50),
+          0 0 7px 2px  rgba(232, 67, 32, 0.40),
+          0 3px 7px    rgb(0 0 0 / 0.22),
+          0 1px 3px    rgb(0 0 0 / 0.14),
+          inset 0 1px 0 rgb(255 255 255 / 0.9);
+      }
+
+      /* 3. Raised pattern / chip buttons */
+      .pattern-btn {
+        padding: 7px 4px;
+        border-radius: 9px;
+        background: #eae7e1;
+        border: 1px solid #cdc9bf;
+        font-size: 11px;
+        font-weight: 600;
+        color: #6b6860;
+        text-align: center;
+        cursor: pointer;
+        /* Raised slab: bottom hard edge gives 3D "height" */
+        box-shadow:
+          inset 0 1px 0    rgb(255 255 255 / 0.92),
+          0 4px 0          #b8b4aa,
+          0 6px 8px        rgb(0 0 0 / 0.10),
+          0 1px 2px        rgb(0 0 0 / 0.08);
+        transition: box-shadow 0.08s ease, transform 0.08s ease;
+      }
+      /* Lift on hover — button feels interactive */
+      .pattern-btn:hover:not(.active) {
+        box-shadow:
+          inset 0 1px 0  rgb(255 255 255 / 0.92),
+          0 5px 0        #b8b4aa,
+          0 8px 10px     rgb(0 0 0 / 0.13),
+          0 2px 3px      rgb(0 0 0 / 0.09);
+        transform: translateY(-1px);
+      }
+      /* Pressed / active — sunken into panel surface. Dark bg + inset shadow
+         is the signal; no orange ring. Orange is reserved for knob arcs,
+         toggle levers and LED dots only.                                    */
+      .pattern-btn.active {
+        background: #1a1917;
+        color: #f2f0eb;
+        border-color: #1a1917;
+        box-shadow:
+          inset 0 2px 6px  rgb(0 0 0 / 0.22),
+          inset 0 1px 2px  rgb(0 0 0 / 0.14),
+          0 1px 3px        rgb(0 0 0 / 0.08);
+        transform: translateY(2px);
+      }
+      .pattern-btn:active { transform: translateY(2px); }
+      /* Compact variant — tighter padding and smaller text for dense 5-col grids */
+      .pattern-btn.compact { padding: 5px 2px; font-size: 9px; }
+
+      /* ── Light-themed range slider ──────────────────────────────────────── */
+      /* Track fill is injected via inline style (background: linear-gradient) */
+      .hw-slider {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        outline: none;
+        cursor: pointer;
+      }
+      /* Fader-cap thumb — tall rounded rect, like a TX-6 mixer fader.
+         The centre grip line is a single light/dark stripe painted via
+         background gradient so it works without pseudo-elements.            */
+      .hw-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 11px;
+        height: 22px;
+        border-radius: 4px;
+        background:
+          /* single centre grip line */
+          linear-gradient(
+            to bottom,
+            transparent   44%,
+            rgba(0,0,0,0.12) 46%,
+            rgba(255,255,255,0.55) 50%,
+            rgba(0,0,0,0.08) 54%,
+            transparent   56%
+          ),
+          /* body gradient — lit from top-left */
+          linear-gradient(155deg, #ffffff 0%, #e8e4dc 100%);
+        box-shadow:
+          0 2px 5px rgba(0,0,0,0.25),
+          0 1px 2px rgba(0,0,0,0.14),
+          inset 0 1px 0 rgba(255,255,255,0.9);
+        cursor: pointer;
+        transition: transform 0.1s ease;
+      }
+      .hw-slider::-webkit-slider-thumb:hover  { transform: scaleY(1.06); }
+      .hw-slider::-webkit-slider-thumb:active { transform: scaleY(0.96); }
+      .hw-slider::-moz-range-thumb {
+        width: 11px; height: 22px; border: none; border-radius: 4px;
+        background: linear-gradient(155deg, #ffffff 0%, #e8e4dc 100%);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+        cursor: pointer;
+      }
+
+      /* ── Primary CTA button — orange, tactile raised slab ───────────────── */
+      .hw-cta {
+        width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 12px;
+        /* Radial gradient: slightly brighter at centre-top, deepens toward edges */
+        background: radial-gradient(ellipse at 50% 0%, #f05535 0%, #e84320 55%, #d43a1c 100%);
+        color: #ffffff;
+        font-size: 14px; font-weight: 700; letter-spacing: .02em;
+        border-radius: 10px;
+        border: 1px solid #b8310f;
+        box-shadow:
+          /* Top-edge specular — light catching the raised face */
+          inset 0 1px 0 rgba(255,255,255,0.28),
+          /* Hard bottom edge — gives the "height" of the raised button */
+          0 4px 0 #9e2a0d,
+          /* Soft outer drop shadow */
+          0 6px 14px rgba(232,67,32,0.35),
+          0 2px 4px  rgba(0,0,0,0.15);
+        cursor: pointer;
+        transition: box-shadow .08s ease, transform .08s ease;
+      }
+      .hw-cta:hover:not(:disabled) {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,0.32),
+          0 5px 0 #9e2a0d,
+          0 8px 18px rgba(232,67,32,0.40),
+          0 3px 6px  rgba(0,0,0,0.16);
+        transform: translateY(-1px);
+      }
+      .hw-cta:active:not(:disabled) {
+        box-shadow:
+          inset 0 2px 5px rgba(0,0,0,0.20),
+          0 1px 0 #9e2a0d,
+          0 2px 6px rgba(232,67,32,0.20);
+        transform: translateY(3px);
+      }
+      .hw-cta:disabled { opacity: 0.40; cursor: not-allowed; }
+
+      /* ── Button mounting plate — K.O. II style ───────────────────────────────
+         The plate is the recessed cutout in the panel that the button sits inside.
+         Larger border-radius than the button + inset shadow = button set into panel.
+         A bright top hairline reads as the machined rim of the hole catching light. */
+      .hw-cta-mount {
+        /* 5px all sides, but +4px at bottom to visually balance the button's
+           4px bottom shadow — without this the button looks shifted upward. */
+        padding: 5px 5px 9px;
+        border-radius: 16px;
+        background: rgba(0,0,0,0.07);
+        box-shadow:
+          inset 0 2px 6px rgba(0,0,0,0.18),
+          inset 0 1px 2px rgba(0,0,0,0.10),
+          0 1px 0 rgba(255,255,255,0.70);
+      }
+
+      /* 4. Control panel card
+            SVG feTurbulence noise is tiled at 180px — gives an organic matte texture
+            without any visible pattern repeat at this frequency (baseFrequency 0.8).
+            opacity="0.065" — more visible matte texture, feels like quality paper stock.
+            The inset top highlight simulates a beveled top edge catching room light. */
+      .control-panel {
+        background-color: #f8f6f2;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.065'/%3E%3C/svg%3E");
+        background-size: 180px 180px;
+        border: 1px solid #e5e2d9;
+        box-shadow:
+          /* Top-edge bevel highlight — simulates the card's upper face catching light */
+          inset 0 1px 0    rgb(255 255 255 / 0.65),
+          0 10px 15px -3px rgb(0 0 0 / 0.10),
+          0 4px 6px  -4px  rgb(0 0 0 / 0.10);
+      }
     </style>
 
   </head>
-  <body class="bg-[#111] text-white antialiased h-screen overflow-hidden">
+  <body class="bg-[#f2f0eb] text-[#1a1917] antialiased h-screen overflow-hidden">
     <div id="root" class="h-full"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

@@ -3,99 +3,161 @@ import React, { useState, useRef, useCallback } from 'react';
 import { BUILT_IN_PRESETS } from '../presets';
 import { toPng, toJpeg } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
+import EffectMaskPad from './EffectMaskPad';
+import DocsPanel from './DocsPanel';
 import {
-  BackgroundState, AtmosphereStyle, PatternStyle, ImageFilter,
-  ImageMask, DitherStyle, GenerativePreset, ExportFormat, ExportResolution,
+  HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T,
+} from './ui/HardwareControls';
+import {
+  BackgroundState, PatternStyle, ImageFilter, ImageMask,
+  DitherStyle, ExportFormat, ExportResolution,
   AmbientPosition, ImageLayer, LayerBlendMode,
 } from '../types';
 
-// ─── Design tokens ────────────────────────────────────────────────────────────
-// label text : text-[11px]  (section headers: tracking-widest text-[10px])
-// control text: text-xs  (12px)
-// panel width : 310px
+// ─── Local primitives ────────────────────────────────────────────────────────
 
-// ─── Primitives ───────────────────────────────────────────────────────────────
+/** Light-themed horizontal range slider with accent-coloured fill track + LCD readout. */
+const HwSlider: React.FC<{
+  value: number; min: number; max: number; step?: number;
+  onChange: (v: number) => void; decimals?: number; unit?: string;
+}> = ({ value, min, max, step = 1, onChange, decimals = 0, unit = '' }) => {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        className="hw-slider flex-1 min-w-0"
+        style={{ background: `linear-gradient(to right,${T.accent} 0%,${T.accent} ${pct}%,${T.border} ${pct}%,${T.border} 100%)` }}
+      />
+      <LcdDisplay
+        value={value} min={min} max={max}
+        step={step} decimals={decimals} unit={unit}
+        onChange={onChange} small
+      />
+    </div>
+  );
+};
 
-const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <p className="text-[10px] tracking-[0.18em] text-[#555] uppercase font-semibold px-5 pt-5 pb-2.5 select-none">
-    {children}
-  </p>
-);
+/** Pill-shaped segmented control. */
+const HwSegment: React.FC<{
+  options: { id: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}> = ({ options, value, onChange }) => {
+  const count = options.length;
+  const activeIdx = Math.max(0, options.findIndex(o => o.id === value));
 
-const Divider = () => <div className="h-px bg-[#222] mx-5 mt-1" />;
+  return (
+    <div
+      className="relative flex rounded-full w-full border"
+      style={{
+        background: T.panel,
+        borderColor: T.border,
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)',
+        padding: 3,
+      }}
+    >
+      {/* Sliding white pill — moves to the active option with a spring easing.
+          calc(3px + N * ((100% - 6px) / count)) positions it exactly under each
+          equal-width flex-1 button regardless of the container's actual width.  */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: 3, bottom: 3,
+          left:  `calc(3px + ${activeIdx} * ((100% - 6px) / ${count}))`,
+          width: `calc((100% - 6px) / ${count})`,
+          background: T.surface,
+          borderRadius: 9999,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+          pointerEvents: 'none',
+        }}
+      />
+      {options.map(o => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className="leading-none"
+          style={{
+            position: 'relative', zIndex: 1,
+            flex: 1,
+            padding: '5px 0',
+            fontSize: 11, fontWeight: 600,
+            borderRadius: 9999,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: value === o.id ? T.text : T.muted,
+            transition: 'color 0.22s ease',
+          }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+};
 
-/** Left label + right control, single row */
-const Row: React.FC<{ label: string; children: React.ReactNode; tall?: boolean }> = ({ label, children, tall }) => (
-  <div className={`flex items-center px-5 ${tall ? 'py-2.5' : 'py-[9px]'} gap-3`}>
-    <span className="text-[11px] text-[#888] shrink-0 w-[80px]">{label}</span>
+/** Label row — label on left, control(s) on right. */
+const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="flex items-center gap-3">
+    <span className="text-[11px] font-medium shrink-0 w-[80px] select-none" style={{ color: T.muted }}>{label}</span>
     <div className="flex-1 flex items-center justify-end gap-2 min-w-0">{children}</div>
   </div>
 );
 
-/** Full-width block with optional sub-label */
-const Block: React.FC<{ label?: string; children: React.ReactNode; className?: string }> = ({ label, children, className = '' }) => (
-  <div className={`px-5 py-2 ${className}`}>
-    {label && <p className="text-[11px] text-[#666] mb-2">{label}</p>}
-    {children}
-  </div>
-);
-
-const Slider: React.FC<{
-  value: number; min: number; max: number; step?: number;
-  onChange: (v: number) => void; decimals?: number;
-}> = ({ value, min, max, step = 1, onChange, decimals = 0 }) => (
-  <div className="flex items-center gap-2.5 flex-1 min-w-0">
-    <input
-      type="range" min={min} max={max} step={step} value={value}
-      onChange={e => onChange(parseFloat(e.target.value))}
-      className="heroken-slider flex-1 min-w-0"
-    />
-    <span className="text-[11px] text-[#777] w-9 text-right tabular-nums shrink-0">
-      {value.toFixed(decimals)}
-    </span>
-  </div>
-);
-
-const ColorDot: React.FC<{ value: string; onChange: (v: string) => void; size?: number }> = ({ value, onChange, size = 22 }) => (
-  <label className="relative cursor-pointer shrink-0" style={{ width: size, height: size }}>
-    <span className="block w-full h-full rounded-full border border-white/[0.12] shadow-sm" style={{ backgroundColor: value }} />
-    <input type="color" value={value} onChange={e => onChange(e.target.value)}
-      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-  </label>
-);
-
-/** Segmented control — equal-width pill buttons */
-const Segment: React.FC<{
-  options: { id: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}> = ({ options, value, onChange }) => (
-  <div className="flex bg-[#1c1c1c] rounded-lg p-[3px] border border-[#2c2c2c] gap-[2px] w-full">
-    {options.map(o => (
-      <button
-        key={o.id}
-        onClick={() => onChange(o.id)}
-        className={`flex-1 py-[6px] text-xs font-medium rounded-md transition-all leading-none
-          ${value === o.id ? 'bg-white text-black shadow-sm' : 'text-[#777] hover:text-[#bbb]'}`}
+/** Single effect row: number + label + toggle, with collapsible param body below. */
+const EffectSection: React.FC<{
+  label: string;
+  number: number;
+  enabled: boolean;
+  onToggle: (v: boolean) => void;
+  children?: React.ReactNode;
+}> = ({ label, number, enabled, onToggle, children }) => (
+  <div>
+    <div className="flex items-center gap-2 py-2.5"
+      style={{
+        /* 3D groove divider — two hairlines: shadow below, highlight above.
+           Gives the appearance of a machined channel pressed into the panel. */
+        borderBottom: `1px solid ${T.borderDk}`,
+        boxShadow: `0 1px 0 rgba(255,255,255,0.75)`,
+      }}>
+      {/* LED status dot — glows when effect is active, invisible when off */}
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0 transition-all duration-200"
+        style={enabled ? {
+          background: T.accent,
+          boxShadow: `0 0 5px rgba(232,67,32,0.55), 0 0 2px ${T.accent}`,
+        } : {
+          background: T.border,
+          boxShadow: 'none',
+        }}
+      />
+      {/* Sequential row number — same Share Tech Mono treatment as panel numbers,
+          turns a long toggle list into something that reads like a patch bay. */}
+      <span
+        className="leading-none shrink-0"
+        style={{
+          fontFamily: '"Share Tech Mono", ui-monospace, monospace',
+          fontSize: 10, color: T.dim, letterSpacing: '0.04em',
+        }}
       >
-        {o.label}
-      </button>
-    ))}
+        {String(number).padStart(2, '0')}
+      </span>
+      <span className="text-[9px] font-bold tracking-[0.09em] uppercase flex-1 select-none whitespace-nowrap" style={{ color: T.text }}>
+        {label}
+      </span>
+      <TactileToggle value={enabled} onChange={onToggle} />
+    </div>
+    {enabled && children && (
+      <div className="pt-4 pb-3 space-y-4">{children}</div>
+    )}
   </div>
 );
 
-/** Small chip — multi-option grids */
-const Chip: React.FC<{ label: string; active: boolean; onClick: () => void }> = ({ label, active, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`py-[7px] text-[11px] rounded-md border transition-all leading-none font-medium
-      ${active ? 'bg-white text-black border-white' : 'text-[#666] border-[#2c2c2c] hover:border-[#444] hover:text-[#aaa]'}`}
-  >
-    {label}
-  </button>
-);
-
-// ─── Super Visuals gallery ───────────────────────────────────────────────────
+// ─── Gallery constants ───────────────────────────────────────────────────────
 
 const GALLERY = [
   'AI_Bg_02','AI_Bg_05','AI_Bg_07','AI_Bg_08','AI_Bg_09',
@@ -109,51 +171,31 @@ const GALLERY = [
   'AI_Bg_057','AI_Bg_074','AI_Bg_077','AI_Bg_078','AI_Bg_079',
   'AI_Bg_082',
 ].map(name => ({
-  // 300px WebP thumbnail for the grid (396KB total vs 19MB originals)
   thumb: `/super-visuals-ahmed-hassan/thumbs/${name}.webp`,
-  // Full JPEG loaded only when selected as canvas source
   src:   `/super-visuals-ahmed-hassan/${name}.jpg`,
 }));
 
-// ─── Atmosphere grid ──────────────────────────────────────────────────────────
-
-const ATMO: { id: AtmosphereStyle; label: string; icon: string }[] = [
-  { id: 'none',           label: 'None',    icon: 'ph-prohibit' },
-  { id: 'fluid-mesh',     label: 'Fluid',   icon: 'ph-waves' },
-  { id: 'aurora',         label: 'Aurora',  icon: 'ph-rainbow' },
-  { id: 'animated-mesh',  label: 'Spin',    icon: 'ph-spinner' },
-  { id: 'mesh-accent',    label: 'Accent',  icon: 'ph-gradient' },
-  { id: 'kinetic-flow',   label: 'Flow',    icon: 'ph-path' },
-  { id: 'molten-orb',     label: 'Molten',  icon: 'ph-fire' },
-  { id: 'volumetric-fog', label: 'Fog',     icon: 'ph-cloud' },
-  { id: 'generative',     label: 'Gen.',    icon: 'ph-star-four' },
-  { id: 'light-leak',     label: 'Leak',    icon: 'ph-sun-dim' },
-  { id: 'shimmer',        label: 'Shimmer', icon: 'ph-shooting-star' },
-  { id: 'glitch',         label: 'Glitch',  icon: 'ph-code-block' },
-  { id: 'glow',           label: 'Glow',    icon: 'ph-sun' },
-  { id: 'fade-bottom',    label: 'Fade',    icon: 'ph-gradient-horizontal' },
-];
-
-// ─── Gallery + Pexels search ──────────────────────────────────────────────────
-
 const GALLERY_INITIAL = 8;
 const PEXELS_KEY      = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
-const QUICK_SEARCHES  = ['Landscape', 'Atmospheric', 'Cinematic', 'Cosmic', 'Abstract', 'Moody', 'Misty'];
+const QUICK_SEARCHES  = ['Landscape', 'Atmospheric', 'Cinematic', 'Cosmic', 'Abstract', 'Moody'];
 
 interface PexelsPhoto {
-  id: number;
-  alt: string;
-  photographer: string;
+  id: number; alt: string; photographer: string;
   src: { small: string; large2x: string };
 }
 
-const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<BackgroundState>) => void }> = ({ imageUrl, onChange }) => {
-  const [tab, setTab]             = useState<'curated' | 'pexels'>('curated');
-  const [expanded, setExpanded]   = useState(false);
-  const [query, setQuery]         = useState('');
-  const [results, setResults]     = useState<PexelsPhoto[]>([]);
-  const [page, setPage]           = useState(1);
-  const [hasMore, setHasMore]     = useState(false);
+// ─── Gallery section ─────────────────────────────────────────────────────────
+
+const GallerySection: React.FC<{
+  imageUrl?: string;
+  onChange: (p: Partial<BackgroundState>) => void;
+}> = ({ imageUrl, onChange }) => {
+  const [tab, setTab]           = useState<'curated' | 'pexels'>('curated');
+  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery]       = useState('');
+  const [results, setResults]   = useState<PexelsPhoto[]>([]);
+  const [page, setPage]         = useState(1);
+  const [hasMore, setHasMore]   = useState(false);
   const [searching, setSearching] = useState(false);
   const [lastQuery, setLastQuery] = useState('');
 
@@ -161,7 +203,7 @@ const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<Backgr
     if (!q.trim()) return;
     setSearching(true);
     try {
-      const res  = await fetch(
+      const res = await fetch(
         `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=20&page=${pg}&orientation=landscape`,
         { headers: { Authorization: PEXELS_KEY } },
       );
@@ -169,395 +211,288 @@ const GallerySection: React.FC<{ imageUrl?: string; onChange: (p: Partial<Backgr
       const photos: PexelsPhoto[] = data.photos ?? [];
       setResults(pg === 1 ? photos : prev => [...prev, ...photos]);
       setHasMore(photos.length === 20);
-      setLastQuery(q);
-      setPage(pg);
-    } catch { /* silent fail */ }
-    finally { setSearching(false); }
+      setLastQuery(q); setPage(pg);
+    } catch { /* silent */ } finally { setSearching(false); }
   };
 
   const doSearch = (q: string) => { setQuery(q); setResults([]); fetchPexels(q, 1); };
+  const visible  = expanded ? GALLERY : GALLERY.slice(0, GALLERY_INITIAL);
 
-  const visible = expanded ? GALLERY : GALLERY.slice(0, GALLERY_INITIAL);
+  const thumbCls = (active: boolean) =>
+    `relative aspect-square overflow-hidden rounded-lg border-2 transition-all cursor-pointer ${
+      active ? 'border-[#1a1917]' : 'border-transparent hover:border-[#b8b4aa]'
+    }`;
 
   return (
-    <div className="px-5 pb-2">
-
-      {/* Tab bar + attribution */}
-      <div className="flex items-center justify-between mb-2.5">
-        <div className="flex bg-[#1c1c1c] rounded-md p-[3px] border border-[#2a2a2a] gap-[2px]">
-          {(['curated', 'pexels'] as const).map(t => (
+    <div className="space-y-2.5">
+      {/* Tab bar — sliding pill, same technique as HwSegment */}
+      <div className="flex items-center justify-between">
+        <div
+          className="relative flex rounded-full border"
+          style={{
+            background: T.panel, borderColor: T.border,
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)',
+            padding: 3,
+          }}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute', top: 3, bottom: 3,
+              left: tab === 'curated' ? 'calc(3px + 0 * ((100% - 6px) / 2))' : 'calc(3px + 1 * ((100% - 6px) / 2))',
+              width: 'calc((100% - 6px) / 2)',
+              background: T.surface, borderRadius: 9999,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+              transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+              pointerEvents: 'none',
+            }}
+          />
+          {(['curated','pexels'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-2.5 py-[5px] text-[10px] font-medium rounded-[4px] transition-all leading-none ${
-                tab === t ? 'bg-white text-black shadow-sm' : 'text-[#666] hover:text-[#aaa]'
-              }`}>
+              className="leading-none"
+              style={{
+                position: 'relative', zIndex: 1,
+                padding: '5px 14px', fontSize: 10, fontWeight: 600,
+                borderRadius: 9999, background: 'transparent', border: 'none', cursor: 'pointer',
+                color: tab === t ? T.text : T.muted,
+                transition: 'color 0.22s ease',
+              }}>
               {t === 'curated' ? 'Curated' : 'Pexels'}
             </button>
           ))}
         </div>
         {tab === 'curated' && (
-          <p className="text-[9px] text-[#555]">Super Visuals by{' '}
-            <a href="https://x.com/uihssn" target="_blank" rel="noopener noreferrer"
-              className="text-[#3a3a3a] underline underline-offset-2 hover:text-[#666] transition-colors"
-              onClick={e => e.stopPropagation()}>Ahmed Hassan</a>
+          <p className="text-[9px]" style={{ color: T.dim }}>
+            By <a href="https://x.com/uihssn" target="_blank" rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>Ahmed Hassan</a>
           </p>
         )}
         {tab === 'pexels' && (
           <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer"
-            className="text-[9px] text-[#333] hover:text-[#666] transition-colors">
-            Photos by Pexels
-          </a>
+            className="text-[9px] hover:opacity-70 transition-opacity" style={{ color: T.muted }}>Photos by Pexels</a>
         )}
       </div>
 
-      {/* ── Curated ── */}
-      {tab === 'curated' && (<>
-        <div className="grid grid-cols-4 gap-1">
-          {visible.map(item => {
-            const active = imageUrl === item.src;
-            return (
-              <button key={item.src}
-                onClick={() => onChange({ imageUrl: item.src, videoUrl: undefined })}
-                className={`relative aspect-square overflow-hidden rounded-md border transition-all ${
-                  active ? 'border-white/70 ring-1 ring-white/40' : 'border-transparent hover:border-white/20'
-                }`}>
-                <img src={item.thumb} alt="" width={64} height={64}
-                  className="w-full h-full object-cover"
-                  loading={expanded ? 'lazy' : 'eager'} decoding="async" />
-                {active && <div className="absolute inset-0 bg-white/10" />}
+      {/* Curated grid */}
+      {tab === 'curated' && (
+        <>
+          <div className="grid grid-cols-4 gap-1.5">
+            {visible.map(item => (
+              <button key={item.src} onClick={() => onChange({ imageUrl: item.src, videoUrl: undefined })}
+                className={thumbCls(imageUrl === item.src)}>
+                <img src={item.thumb} alt="" width={64} height={64} className="w-full h-full object-cover" loading="eager" decoding="async" />
+                {imageUrl === item.src && <div className="absolute inset-0 bg-black/10" />}
               </button>
-            );
-          })}
-        </div>
-        {!expanded && GALLERY.length > GALLERY_INITIAL && (
-          <button onClick={() => setExpanded(true)}
-            className="w-full mt-2 py-1.5 text-[10px] text-[#555] hover:text-[#999] border border-[#222] hover:border-[#333] rounded-lg transition-colors">
-            View all {GALLERY.length} images
-          </button>
-        )}
-        {expanded && (
-          <button onClick={() => setExpanded(false)}
-            className="w-full mt-2 py-1.5 text-[10px] text-[#555] hover:text-[#999] border border-[#222] hover:border-[#333] rounded-lg transition-colors">
-            Show less
-          </button>
-        )}
-      </>)}
+            ))}
+          </div>
+          {!expanded && GALLERY.length > GALLERY_INITIAL && (
+            <button onClick={() => setExpanded(true)}
+              className="w-full py-2 text-[10px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              View all {GALLERY.length} images
+            </button>
+          )}
+          {expanded && (
+            <button onClick={() => setExpanded(false)}
+              className="w-full py-2 text-[10px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Show less
+            </button>
+          )}
+        </>
+      )}
 
-      {/* ── Pexels ── */}
-      {tab === 'pexels' && (<>
-        {/* Quick searches */}
-        <div className="flex flex-wrap gap-1 mb-2">
-          {QUICK_SEARCHES.map(q => (
-            <button key={q} onClick={() => doSearch(q)}
-              className={`px-2.5 py-1 text-[10px] rounded-full border transition-all ${
-                lastQuery.toLowerCase() === q.toLowerCase()
-                  ? 'border-white/40 bg-white/10 text-white'
-                  : 'border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#999]'
-              }`}>{q}</button>
-          ))}
-        </div>
-
-        {/* Search input */}
-        <div className="flex gap-1.5 mb-2">
-          <input type="text" placeholder="Search Pexels…" value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && doSearch(query)}
-            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-1.5 text-[11px] text-white placeholder-[#444] outline-none focus:border-[#444] transition-colors" />
-          <button onClick={() => doSearch(query)} disabled={searching}
-            className="px-3 py-1.5 bg-white text-black text-[10px] font-semibold rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors shrink-0">
-            {searching ? '…' : 'Go'}
-          </button>
-        </div>
-
-        {/* Results */}
-        {results.length > 0 && (
-          <div className="grid grid-cols-4 gap-1">
-            {results.map(photo => {
-              const active = imageUrl === photo.src.large2x;
-              return (
+      {/* Pexels search */}
+      {tab === 'pexels' && (
+        <>
+          <div className="flex flex-wrap gap-1">
+            {QUICK_SEARCHES.map(q => (
+              <button key={q} onClick={() => doSearch(q)}
+                className="px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all"
+                style={{
+                  borderColor: lastQuery.toLowerCase() === q.toLowerCase() ? T.accent : T.border,
+                  color: lastQuery.toLowerCase() === q.toLowerCase() ? T.accent : T.muted,
+                  background: T.panel,
+                }}>{q}</button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <input type="text" placeholder="Search Pexels…" value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doSearch(query)}
+              className="flex-1 rounded-lg px-3 py-1.5 text-[11px] outline-none border transition-colors"
+              style={{ background: T.panel, borderColor: T.border, color: T.text }} />
+            <button onClick={() => doSearch(query)} disabled={searching}
+              className="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-40"
+              style={{ background: T.text, color: T.bg }}>
+              {searching ? '…' : 'Go'}
+            </button>
+          </div>
+          {results.length > 0 && (
+            <div className="grid grid-cols-4 gap-1.5">
+              {results.map(photo => (
                 <button key={photo.id}
                   onClick={() => onChange({ imageUrl: photo.src.large2x, videoUrl: undefined })}
                   title={`${photo.alt || 'Photo'} · ${photo.photographer}`}
-                  className={`relative aspect-square overflow-hidden rounded-md border transition-all ${
-                    active ? 'border-white/70 ring-1 ring-white/40' : 'border-transparent hover:border-white/20'
-                  }`}>
+                  className={thumbCls(imageUrl === photo.src.large2x)}>
                   <img src={photo.src.small} alt={photo.alt || ''} width={64} height={64}
                     className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                  {active && <div className="absolute inset-0 bg-white/10" />}
                 </button>
-              );
-            })}
-          </div>
-        )}
-
-        {results.length === 0 && !searching && lastQuery && (
-          <p className="text-[10px] text-[#444] text-center py-4">No results for "{lastQuery}"</p>
-        )}
-        {results.length === 0 && !searching && !lastQuery && (
-          <p className="text-[10px] text-[#444] text-center py-6 leading-relaxed px-2">
-            Tap a quick search or type your own to pull from millions of photos.
-          </p>
-        )}
-        {hasMore && !searching && (
-          <button onClick={() => fetchPexels(lastQuery, page + 1)}
-            className="w-full mt-2 py-1.5 text-[10px] text-[#555] hover:text-[#999] border border-[#222] hover:border-[#333] rounded-lg transition-colors">
-            Load more
-          </button>
-        )}
-        {searching && results.length > 0 && (
-          <p className="text-[10px] text-[#444] text-center py-2">Loading…</p>
-        )}
-      </>)}
-    </div>
-  );
-};
-
-// ─── Video export ─────────────────────────────────────────────────────────────
-
-const VideoExportSection: React.FC<{ videoUrl?: string; state: BackgroundState }> = ({ videoUrl, state }) => {
-  const [format, setFormat]         = useState<'mp4' | 'webm'>('mp4');
-  const [duration, setDuration]     = useState(5);
-  const [pixelRatio, setPixelRatio] = useState<1|2|4>(2);
-  const [speed, setSpeed]           = useState<0.5|1>(1);
-  const [exporting, setExporting]   = useState(false);
-  const [progress, setProgress]     = useState(0);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const rafRef      = useRef<number>(0);
-
-  const exportVideo = async () => {
-    const container = document.getElementById('heroken-canvas') as HTMLElement | null;
-    const vid = container?.querySelector('video') as HTMLVideoElement | null;
-    if (!vid) return;
-
-    const w = container!.clientWidth  * pixelRatio;
-    const h = container!.clientHeight * pixelRatio;
-
-    vid.playbackRate = speed;
-    if (vid.paused) {
-      await new Promise<void>(res => {
-        vid.addEventListener('playing', () => res(), { once: true });
-        vid.play().catch(() => res());
-        setTimeout(res, 800);
-      });
-    }
-    await new Promise(r => setTimeout(r, 120));
-
-    const rec = document.createElement('canvas');
-    rec.width = w; rec.height = h;
-    const ctx = rec.getContext('2d')!;
-
-    const GW = Math.min(512, w), GH = Math.min(512, h);
-    const gCanvas = document.createElement('canvas');
-    gCanvas.width = GW; gCanvas.height = GH;
-    const gCtx = gCanvas.getContext('2d')!;
-    const gImg = gCtx.createImageData(GW, GH);
-    const nhex = (state.noiseColor || '#ffffff').replace('#', '');
-    const nr = parseInt(nhex.slice(0, 2), 16) || 255;
-    const ng = parseInt(nhex.slice(2, 4), 16) || 255;
-    const nb = parseInt(nhex.slice(4, 6), 16) || 255;
-
-    const refreshGrain = () => {
-      for (let i = 0; i < gImg.data.length; i += 4) {
-        const v = Math.random() > 0.65 ? ((Math.random() - 0.65) / 0.35) * 255 : 0;
-        gImg.data[i] = nr; gImg.data[i+1] = ng; gImg.data[i+2] = nb; gImg.data[i+3] = v | 0;
-      }
-      gCtx.putImageData(gImg, 0, 0);
-    };
-    refreshGrain();
-
-    const candidates = format === 'mp4'
-      ? ['video/mp4', 'video/webm;codecs=vp9', 'video/webm']
-      : ['video/webm;codecs=vp9', 'video/webm'];
-    const mimeType = candidates.find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
-
-    const stream   = rec.captureStream(30);
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 * pixelRatio });
-    recorderRef.current = recorder;
-    const chunks: Blob[] = [];
-
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = () => {
-      vid.playbackRate = 1;
-      const ext  = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const blob = new Blob(chunks, { type: mimeType });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.download = `herokit-background.${ext}`;
-      a.href = url; a.click();
-      URL.revokeObjectURL(url);
-      setExporting(false); setProgress(0);
-    };
-
-    setExporting(true);
-    recorder.start(100);
-    const t0 = performance.now();
-    const total = duration * 1000;
-    let grainTick = 0;
-
-    const render = () => {
-      const elapsed = performance.now() - t0;
-      if (elapsed >= total) { recorder.stop(); return; }
-      setProgress((elapsed / total) * 100);
-
-      ctx.fillStyle = state.bgColor || '#050508';
-      ctx.fillRect(0, 0, w, h);
-
-      try { ctx.drawImage(vid, 0, 0, w, h); } catch {}
-
-      if ((state.overlayOpacity ?? 0) > 0) {
-        ctx.fillStyle = `rgba(0,0,0,${state.overlayOpacity})`;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      container!.querySelectorAll<HTMLCanvasElement>('canvas').forEach(c => {
-        try { ctx.drawImage(c, 0, 0, w, h); } catch {}
-      });
-
-      if ((state.noiseOpacity ?? 0) > 0) {
-        if (grainTick++ % 2 === 0) refreshGrain();
-        ctx.globalAlpha = state.noiseOpacity;
-        ctx.drawImage(gCanvas, 0, 0, w, h);
-        ctx.globalAlpha = 1;
-      }
-
-      if ((state.vignetteStrength ?? 0) > 0) {
-        const vg = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.65);
-        vg.addColorStop(0.3, 'rgba(0,0,0,0)');
-        vg.addColorStop(1, `rgba(0,0,0,${state.vignetteStrength})`);
-        ctx.fillStyle = vg;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      rafRef.current = requestAnimationFrame(render);
-    };
-    render();
-  };
-
-  const cancel = () => {
-    recorderRef.current?.stop();
-    cancelAnimationFrame(rafRef.current);
-    const vid = document.querySelector('#heroken-canvas video') as HTMLVideoElement | null;
-    if (vid) vid.playbackRate = 1;
-    setExporting(false); setProgress(0);
-  };
-
-  return (
-    <div className="px-5 pb-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Segment options={[{ id:'mp4', label:'MP4' }, { id:'webm', label:'WebM' }]} value={format} onChange={v => setFormat(v as 'mp4'|'webm')} />
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Duration</span>
-        <div className="flex-1"><Segment options={[{ id:'3', label:'3s' }, { id:'5', label:'5s' }, { id:'10', label:'10s' }, { id:'15', label:'15s' }]} value={String(duration)} onChange={v => setDuration(Number(v))} /></div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Speed</span>
-        <div className="flex-1"><Segment options={[{ id:'0.5', label:'0.5×' }, { id:'1', label:'1×' }]} value={String(speed)} onChange={v => setSpeed(Number(v) as 0.5|1)} /></div>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
-        <div className="flex-1"><Segment options={[{ id:'1', label:'1×' }, { id:'2', label:'2×' }, { id:'4', label:'4×' }]} value={String(pixelRatio)} onChange={v => setPixelRatio(Number(v) as 1|2|4)} /></div>
-      </div>
-      {exporting ? (
-        <div className="space-y-2">
-          <div className="w-full h-1.5 bg-[#2a2a2a] rounded-full overflow-hidden">
-            <div className="h-full bg-white rounded-full transition-all" style={{ width: `${progress}%` }} />
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-[#888]">Exporting… {(progress * duration / 100).toFixed(1)}s / {duration}s</span>
-            <button onClick={cancel} className="text-[10px] text-[#666] hover:text-[#999] transition-colors">Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={exportVideo} disabled={!videoUrl}
-          className="w-full flex items-center justify-center gap-2 py-[10px] rounded-lg bg-white text-black text-sm font-semibold hover:bg-gray-100 disabled:opacity-30 transition-all">
-          <i className="ph-bold ph-download-simple text-base" />
-          Export Video
-        </button>
+              ))}
+            </div>
+          )}
+          {results.length === 0 && !searching && lastQuery && (
+            <p className="text-[10px] text-center py-4" style={{ color: T.dim }}>No results for "{lastQuery}"</p>
+          )}
+          {results.length === 0 && !searching && !lastQuery && (
+            <p className="text-[10px] text-center py-6 leading-relaxed px-2" style={{ color: T.dim }}>
+              Pick a quick search or type your own.
+            </p>
+          )}
+          {hasMore && !searching && (
+            <button onClick={() => fetchPexels(lastQuery, page + 1)}
+              className="w-full py-2 text-[10px] font-medium rounded-lg border"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Load more
+            </button>
+          )}
+        </>
       )}
-      <p className="text-[9px] text-[#444] leading-relaxed">
-        Bakes film grain, vignette &amp; overlay into every frame. Load a video to enable.
-      </p>
     </div>
   );
 };
 
-// ─── Layers ───────────────────────────────────────────────────────────────────
+// ─── Layers section ──────────────────────────────────────────────────────────
 
 const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
-  { id: 'screen',     label: 'Screen'   },
-  { id: 'multiply',   label: 'Multiply' },
-  { id: 'overlay',    label: 'Overlay'  },
-  { id: 'soft-light', label: 'Soft'     },
-  { id: 'difference', label: 'Differ.'  },
-  { id: 'luminosity', label: 'Luminosity'},
+  { id: 'screen',     label: 'Screen'  },
+  { id: 'multiply',   label: 'Multiply'},
+  { id: 'overlay',    label: 'Overlay' },
+  { id: 'soft-light', label: 'Soft'    },
+  { id: 'difference', label: 'Differ.' },
+  { id: 'luminosity', label: 'Lumin.'  },
 ];
 
 const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
 
 const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) => {
-  const [tab, setTab]       = useState<'curated' | 'pexels'>('curated');
+  const [tab, setTab]       = useState<'curated'|'pexels'>('curated');
   const [query, setQuery]   = useState('');
   const [results, setResults] = useState<{ id: number; src: { small: string; large2x: string } }[]>([]);
   const [searching, setSearching] = useState(false);
-  const PEXELS_KEY = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage]     = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [lastQuery, setLastQuery] = useState('');
 
-  const searchPexels = async (q: string) => {
+  const handleFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const r = new FileReader();
+    r.onload = ev => onPick(ev.target?.result as string);
+    r.readAsDataURL(file);
+  };
+
+  const searchPexels = async (q: string, pg: number = 1) => {
     if (!q.trim() || !PEXELS_KEY) return;
     setSearching(true);
     try {
-      const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=12&orientation=landscape`, { headers: { Authorization: PEXELS_KEY } });
+      const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=12&page=${pg}&orientation=landscape`, { headers: { Authorization: PEXELS_KEY } });
       const data = await res.json();
-      setResults(data.photos ?? []);
+      const photos: { id: number; src: { small: string; large2x: string } }[] = data.photos ?? [];
+      setResults(pg === 1 ? photos : prev => [...prev, ...photos]);
+      setHasMore(photos.length === 12);
+      setLastQuery(q); setPage(pg);
     } catch {} finally { setSearching(false); }
   };
 
   return (
     <div className="space-y-2">
-      {/* Tab */}
-      <div className="flex bg-[#1c1c1c] rounded-md p-[3px] border border-[#2a2a2a] gap-[2px]">
-        {(['curated', 'pexels'] as const).map(t => (
+      <div
+        className="relative flex rounded-full border"
+        style={{
+          background: T.panel, borderColor: T.border,
+          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)',
+          padding: 3,
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute', top: 3, bottom: 3,
+            left: tab === 'curated' ? 'calc(3px + 0 * ((100% - 6px) / 2))' : 'calc(3px + 1 * ((100% - 6px) / 2))',
+            width: 'calc((100% - 6px) / 2)',
+            background: T.surface, borderRadius: 9999,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+            transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+            pointerEvents: 'none',
+          }}
+        />
+        {(['curated','pexels'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-[5px] text-[10px] font-medium rounded-[4px] transition-all ${tab === t ? 'bg-white text-black' : 'text-[#666] hover:text-[#aaa]'}`}>
+            className="leading-none"
+            style={{
+              position: 'relative', zIndex: 1, flex: 1,
+              padding: '5px 0', fontSize: 10, fontWeight: 600,
+              borderRadius: 9999, background: 'transparent', border: 'none', cursor: 'pointer',
+              color: tab === t ? T.text : T.muted,
+              transition: 'color 0.22s ease',
+            }}>
             {t === 'curated' ? 'Gallery' : 'Pexels'}
           </button>
         ))}
       </div>
-
-      {/* Upload always available */}
-      <label className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg border border-dashed border-[#2a2a2a] cursor-pointer hover:border-[#444] text-[#555] hover:text-[#888] transition-colors text-[10px]">
-        <i className="ph ph-upload-simple text-sm" /> Upload image
+      {/* Dropzone — same treatment as the Layer 1 / Source upload area */}
+      <label
+        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+        onDragOver={e => e.preventDefault()}
+        className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
+        style={{ borderColor: T.border, color: T.muted }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = T.text)}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = T.border)}
+      >
+        <i className="ph ph-upload-simple text-xl" />
+        <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
         <input type="file" accept="image/*" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => onPick(ev.target?.result as string); r.readAsDataURL(f); }} />
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
       </label>
-
-      {/* Curated gallery */}
       {tab === 'curated' && (
-        <div className="grid grid-cols-4 gap-1">
-          {GALLERY.slice(0, 8).map(item => (
-            <button key={item.src} onClick={() => onPick(item.src)}
-              className="aspect-square overflow-hidden rounded-md border border-transparent hover:border-white/30 transition-all">
-              <img src={item.thumb} alt="" width={48} height={48} className="w-full h-full object-cover" loading="eager" decoding="async" />
+        <>
+          <div className="grid grid-cols-4 gap-1">
+            {(expanded ? GALLERY : GALLERY.slice(0, GALLERY_INITIAL)).map(item => (
+              <button key={item.src} onClick={() => onPick(item.src)}
+                className="aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-[#b8b4aa] transition-all">
+                <img src={item.thumb} alt="" width={48} height={48} className="w-full h-full object-cover"
+                  loading={expanded ? 'lazy' : 'eager'} decoding="async" />
+              </button>
+            ))}
+          </div>
+          {GALLERY.length > GALLERY_INITIAL && (
+            <button onClick={() => setExpanded(v => !v)}
+              className="w-full py-1.5 text-[10px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              {expanded ? 'Show less' : `View all ${GALLERY.length} images`}
             </button>
-          ))}
-        </div>
+          )}
+        </>
       )}
-
-      {/* Pexels search */}
       {tab === 'pexels' && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap gap-1">
             {PEXELS_QUICK.map(q => (
               <button key={q} onClick={() => { setQuery(q); searchPexels(q); }}
-                className="px-2 py-0.5 text-[9px] rounded-full border border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#999] transition-all">{q}</button>
+                className="px-2 py-0.5 text-[9px] rounded-full border transition-all"
+                style={{ borderColor: T.border, color: T.muted, background: T.panel }}>{q}</button>
             ))}
           </div>
           <div className="flex gap-1">
             <input value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && searchPexels(query)}
               placeholder="Search Pexels…"
-              className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-2 py-1.5 text-[10px] text-white placeholder-[#444] outline-none focus:border-[#444]" />
+              className="flex-1 rounded-lg px-2 py-1.5 text-[10px] outline-none border"
+              style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => searchPexels(query)} disabled={searching}
-              className="px-2.5 py-1.5 bg-white text-black text-[9px] font-bold rounded-lg disabled:opacity-40">
+              className="px-2.5 py-1.5 text-[9px] font-bold rounded-lg disabled:opacity-40"
+              style={{ background: T.text, color: T.bg }}>
               {searching ? '…' : 'Go'}
             </button>
           </div>
@@ -565,11 +500,21 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
             <div className="grid grid-cols-4 gap-1">
               {results.map(p => (
                 <button key={p.id} onClick={() => onPick(p.src.large2x)}
-                  className="aspect-square overflow-hidden rounded-md border border-transparent hover:border-white/30 transition-all">
-                  <img src={p.src.small} alt="" width={48} height={48} className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                  className="aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-[#b8b4aa] transition-all">
+                  <img src={p.src.small} alt="" width={48} height={48} className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
+          )}
+          {hasMore && !searching && (
+            <button onClick={() => searchPexels(lastQuery, page + 1)}
+              className="w-full py-1.5 text-[10px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Load more
+            </button>
+          )}
+          {searching && results.length > 0 && (
+            <p className="text-[10px] text-center py-1" style={{ color: T.dim }}>Loading…</p>
           )}
         </div>
       )}
@@ -589,115 +534,113 @@ const LayersSection: React.FC<{
     onChange([...layers, { id, blendMode: 'screen', opacity: 0.8 }]);
     setCollapsed(prev => ({ ...prev, [id]: false }));
   };
-
-  const update  = (id: string, patch: Partial<ImageLayer>) => onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
-  const remove  = (id: string) => onChange(layers.filter(l => l.id !== id));
-  const toggle  = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+  const update = (id: string, patch: Partial<ImageLayer>) => onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
+  const remove = (id: string) => onChange(layers.filter(l => l.id !== id));
+  const toggle = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
   return (
-    <div className="px-5 pb-3 space-y-2.5">
+    <div className="space-y-2">
       {layers.map((layer, i) => {
         const isCollapsed = !!collapsed[layer.id];
-        const label = BLEND_MODES.find(m => m.id === layer.blendMode)?.label ?? layer.blendMode;
-
+        const modeLabel = BLEND_MODES.find(m => m.id === layer.blendMode)?.label ?? layer.blendMode;
         return (
-          <div key={layer.id} className="rounded-xl border border-[#252525] bg-[#111] overflow-hidden">
-
-            {/* Header — always visible */}
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-[#1e1e1e]">
-              {/* Thumbnail when collapsed */}
+          <div key={layer.id} className="rounded-xl overflow-hidden border"
+            style={{ borderColor: T.border, background: T.surface, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+            <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: T.border }}>
               {isCollapsed && layer.imageUrl && (
-                <div className="w-8 h-8 rounded overflow-hidden shrink-0">
+                <div className="w-7 h-7 rounded overflow-hidden shrink-0">
                   <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
                 </div>
               )}
-              <span className="text-[11px] font-semibold text-[#888] flex-1">
+              <span className="text-[11px] font-semibold flex-1" style={{ color: T.muted }}>
                 Layer {i + 2}
                 {isCollapsed && layer.imageUrl && (
-                  <span className="text-[#555] font-normal"> · {label} {Math.round(layer.opacity * 100)}%</span>
+                  <span className="font-normal" style={{ color: T.dim }}> · {modeLabel} {Math.round(layer.opacity * 100)}%</span>
                 )}
               </span>
-              {/* Hide / Show */}
               {layer.imageUrl && (
-                <button onClick={() => toggle(layer.id)}
-                  className="text-[10px] text-[#555] hover:text-[#999] transition-colors px-1">
+                <button onClick={() => toggle(layer.id)} className="text-[10px] transition-colors px-1" style={{ color: T.dim }}>
                   {isCollapsed ? 'Show' : 'Hide'}
                 </button>
               )}
-              {/* Delete */}
-              <button onClick={() => remove(layer.id)}
-                className="text-[#444] hover:text-red-400 transition-colors ml-1">
+              <button onClick={() => remove(layer.id)} className="transition-colors ml-1 hover:text-red-500" style={{ color: T.border }}>
                 <i className="ph ph-x text-sm" />
               </button>
             </div>
-
-            {/* Collapsible body */}
             {!isCollapsed && (
               <div className="p-3 space-y-3">
-                {/* Image picker — gallery + Pexels */}
                 {layer.imageUrl ? (
                   <div className="relative rounded-lg overflow-hidden h-20 group">
                     <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium hover:bg-white/30 transition-colors">
+                      <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">
                         Change
                         <input type="file" accept="image/*" className="hidden"
                           onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => update(layer.id, { imageUrl: ev.target?.result as string }); r.readAsDataURL(f); }} />
                       </label>
                       <button onClick={() => update(layer.id, { imageUrl: undefined })}
-                        className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium hover:bg-white/30 transition-colors">
-                        Clear
-                      </button>
+                        className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">Clear</button>
                     </div>
                   </div>
                 ) : (
-                  <LayerPicker onPick={url => { update(layer.id, { imageUrl: url }); setCollapsed(prev => ({ ...prev, [layer.id]: true })); }} />
+                  <LayerPicker onPick={url => update(layer.id, { imageUrl: url })} />
                 )}
-
-                {/* Blend mode */}
                 <div>
-                  <p className="text-[10px] text-[#555] mb-1.5">Blend</p>
-                  <div className="grid grid-cols-3 gap-1">
-                    {BLEND_MODES.map(m => (
-                      <Chip key={m.id} label={m.label} active={layer.blendMode === m.id} onClick={() => update(layer.id, { blendMode: m.id })} />
-                    ))}
-                  </div>
+                  <p className="text-[10px] font-medium mb-1.5" style={{ color: T.muted }}>Blend mode</p>
+                  <PatternGrid options={BLEND_MODES} value={layer.blendMode} onChange={v => update(layer.id, { blendMode: v as LayerBlendMode })} columns={3} />
                 </div>
-
-                {/* Opacity */}
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-[#777] shrink-0 w-[52px]">Opacity</span>
-                  <Slider value={Math.round(layer.opacity * 100)} min={1} max={100}
-                    onChange={v => update(layer.id, { opacity: v / 100 })} />
-                </div>
+                <Row label="Opacity">
+                  <HwSlider value={Math.round(layer.opacity * 100)} min={1} max={100} onChange={v => update(layer.id, { opacity: v / 100 })} />
+                </Row>
               </div>
             )}
           </div>
         );
       })}
-
       {layers.length < 2 && (
         <button onClick={addLayer}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-[#2a2a2a] text-[#555] hover:text-[#999] hover:border-[#444] transition-all text-[11px] font-medium">
-          <i className="ph ph-plus text-sm" />
-          Add Layer {layers.length + 2}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed text-[11px] font-medium transition-all"
+          style={{ borderColor: T.border, color: T.muted }}>
+          <i className="ph ph-plus text-sm" /> Add Layer {layers.length + 2}
         </button>
       )}
     </div>
   );
 };
 
-// ─── Panel ────────────────────────────────────────────────────────────────────
-
-// ─── Video Export section ─────────────────────────────────────────────────────
-// hasEffects = true when animated canvas layers are active (shaders, kinetic flow, etc.)
-// If false → we just download the source video directly (no re-encoding needed)
-const hasActiveCanvasEffects = (): boolean => {
-  const container = document.getElementById('heroken-canvas');
-  if (!container) return false;
-  // More than one canvas = effect canvases are present on top of the source
-  return container.querySelectorAll('canvas').length > 1;
+// ─── Preset vibe colours ─────────────────────────────────────────────────────
+// Each dot reflects what the preset actually does — grade tone, dominant effect.
+const PRESET_DOT: Record<string, string> = {
+  'Analog Film':  '#b5700a', // vellichor amber — warm film grain
+  'Polaroid':     '#d4a535', // golden yellow — lifted warm tones
+  'Disperse':     '#ea8c35', // golden orange — golden hour scatter
+  'Oil Paint':    '#7c5a2b', // dark ochre — painterly warp/sort
+  'Prism':        '#9333ea', // violet — RGB spectrum split
+  'Glitch Art':   '#16a34a', // VHS green — digital glitch
+  'Noir Print':   '#525252', // charcoal — B&W dither
+  'Neon Dreams':  '#0891b2', // cyan — cross-process neon
 };
+
+// ─── Option lists ─────────────────────────────────────────────────────────────
+
+const FILTERS: { id: ImageFilter; label: string }[] = [
+  { id: 'none', label: 'None' }, { id: 'grayscale', label: 'B&W' },
+  { id: 'desaturate', label: 'Muted' }, { id: 'tint', label: 'Tint' },
+  { id: 'duotone', label: 'Duo' }, { id: 'frosted', label: 'Frost' },
+];
+const MASKS: { id: ImageMask; label: string }[] = [
+  { id: 'none', label: 'None' }, { id: 'fade-bottom', label: 'Bottom' },
+  { id: 'fade-left', label: 'Left' }, { id: 'fade-right', label: 'Right' },
+  { id: 'radial', label: 'Radial' }, { id: 'soft-edges', label: 'Soft' },
+];
+const PATTERNS: { id: PatternStyle; label: string }[] = [
+  { id: 'none', label: 'Off' }, { id: 'grid', label: 'Grid' },
+  { id: 'dot', label: 'Dot' }, { id: 'iso-grid', label: 'ISO' },
+  { id: 'scanline', label: 'Scan' }, { id: 'hex', label: 'Hex' },
+  { id: 'waves', label: 'Waves' }, { id: 'plus', label: 'Plus' },
+];
+
+// ─── RightPanel ──────────────────────────────────────────────────────────────
 
 interface RightPanelProps {
   state: BackgroundState;
@@ -710,10 +653,9 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
-
+  const [showDocs, setShowDocs]   = useState(false);
   const set = (patch: Partial<BackgroundState>) => onChange(patch);
 
-  // ── File handling ──────────────────────────────────────────────────────────
   const handleFile = (file: File) => {
     if (file.type.startsWith('image/')) {
       const r = new FileReader();
@@ -724,7 +666,6 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
     }
   };
 
-  // ── Export ─────────────────────────────────────────────────────────────────
   const handleExport = async () => {
     const node = document.getElementById('heroken-canvas');
     if (!node) return;
@@ -736,887 +677,777 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         : await toPng(node, { pixelRatio: pr, cacheBust: true });
       const a = document.createElement('a');
       a.download = `herokit.${format.toLowerCase()}`;
-      a.href = dataUrl;
-      a.click();
-    } catch {
-      alert('Export failed — try a lower resolution.');
-    } finally {
-      setExporting(false);
-    }
+      a.href = dataUrl; a.click();
+    } catch { alert('Export failed — try a lower resolution.'); }
+    finally { setExporting(false); }
   };
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
-  const hasAtmo   = state.atmosphereStyle !== 'none';
-  const speedAtmos: AtmosphereStyle[] = ['fluid-mesh', 'animated-mesh', 'aurora', 'shimmer', 'kinetic-flow'];
 
-  const FILTERS: { id: ImageFilter; label: string }[] = [
-    { id: 'none',       label: 'None'    },
-    { id: 'grayscale',  label: 'B&W'     },
-    { id: 'desaturate', label: 'Muted'   },
-    { id: 'tint',       label: 'Tint'    },
-    { id: 'duotone',    label: 'Duotone' },
-    { id: 'frosted',    label: 'Frosted' },
-  ];
-
-  const MASKS: { id: ImageMask; label: string }[] = [
-    { id: 'none',        label: 'None'   },
-    { id: 'fade-bottom', label: 'Bottom' },
-    { id: 'fade-left',   label: 'Left'   },
-    { id: 'fade-right',  label: 'Right'  },
-    { id: 'radial',      label: 'Radial' },
-    { id: 'soft-edges',  label: 'Soft'   },
-  ];
-
-  const PATTERNS: { id: PatternStyle; label: string }[] = [
-    { id: 'none',     label: 'Off'   },
-    { id: 'grid',     label: 'Grid'  },
-    { id: 'dot',      label: 'Dot'   },
-    { id: 'iso-grid', label: 'ISO'   },
-    { id: 'scanline', label: 'Scan'  },
-    { id: 'hex',      label: 'Hex'   },
-    { id: 'waves',    label: 'Waves' },
-    { id: 'plus',     label: 'Plus'  },
-  ];
+  // ─── Ambient position grid (3×3 dot picker) ───────────────────────────────
+  const AmbientPicker = () => (
+    <div className="grid grid-cols-3 gap-1" style={{ width: 72 }}>
+      {(['tl','tc','tr','ml','mc','mr','bl','bc','br'] as AmbientPosition[]).map(pos => (
+        <button key={pos} onClick={() => set({ ambientLightPosition: pos })}
+          className="aspect-square rounded-sm transition-all"
+          style={{
+            background: state.ambientLightPosition === pos ? T.text : T.panel,
+            boxShadow: state.ambientLightPosition === pos
+              ? `0 0 0 1.5px ${T.accent}`
+              : `0 1px 0 ${T.borderDk}, inset 0 1px 0 rgba(255,255,255,0.6)`,
+          }} />
+      ))}
+    </div>
+  );
 
   return (
     <div
-      className="w-[310px] shrink-0 flex flex-col bg-[#161616] border-l border-[#222] h-full"
-      style={{ overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}
+      className="w-[310px] shrink-0 flex flex-col h-full"
+      style={{
+        background: T.bg,
+        borderLeft: `1px solid ${T.border}`,
+        overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none',
+      }}
     >
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-[#222] shrink-0">
-        <div className="flex items-center gap-2">
-          <img src="/herokit_logomark_light.png" alt="" className="w-5 h-5 object-contain" />
-          <span className="text-sm font-semibold text-white tracking-wide">HeroKit</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onResetEffects}
-            title="Reset all effects to defaults (keeps image)"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#555] hover:text-white hover:bg-white/[0.06] transition-all"
-          >
-            <i className="ph ph-arrow-counter-clockwise text-base" />
-            <span className="text-[11px] font-medium">Reset</span>
-          </button>
-          <button
-            onClick={onOpenLooks}
-            title="Looks — save, share & history"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[#555] hover:text-white hover:bg-white/[0.06] transition-all"
-          >
-            <i className="ph ph-bookmark-simple text-base" />
-            <span className="text-[11px] font-medium">Looks</span>
-          </button>
-        </div>
-      </div>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="px-5 pt-4 pb-7 shrink-0">
 
-      {/* ── SOURCE ──────────────────────────────────────────────────────── */}
-      <SectionLabel>Source</SectionLabel>
-
-      <div className="px-5 pb-3 space-y-2">
-        <label
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-          onDragOver={e => e.preventDefault()}
-          className="flex flex-col items-center justify-center gap-2 w-full h-[72px] rounded-xl border border-dashed border-[#2e2e2e] cursor-pointer hover:border-[#555] hover:bg-white/[0.03] transition-all text-[#555] hover:text-[#999]"
-        >
-          <i className="ph ph-upload-simple text-xl" />
-          <span className="text-xs tracking-wide">Upload Image</span>
-          <input type="file" className="hidden" accept="image/*"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-        </label>
-
-        {hasSource && (
-          <button
-            onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
-            className="w-full py-2 text-xs text-[#666] hover:text-[#bbb] border border-[#252525] hover:border-[#3a3a3a] rounded-lg transition-colors"
-          >
-            Clear source
-          </button>
-        )}
-      </div>
-
-      {/* ── IMAGE EXPORT — moved above gallery for quick access ─────────── */}
-      <SectionLabel>Image Export</SectionLabel>
-
-      <div className="px-5 pb-5 space-y-3">
-        <Segment
-          options={[{ id: 'PNG', label: 'PNG' }, { id: 'WebP', label: 'WebP' }, { id: 'JPG', label: 'JPG' }]}
-          value={format}
-          onChange={v => setFormat(v as ExportFormat)}
-        />
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="w-full flex items-center justify-center gap-2 py-[10px] bg-white text-black text-sm font-semibold rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors disabled:opacity-40"
-        >
-          {exporting ? <i className="ph ph-spinner animate-spin text-base" /> : <i className="ph-bold ph-download-simple text-base" />}
-          {exporting ? 'Exporting…' : 'Export'}
-        </button>
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-[#888] shrink-0 w-[80px]">Resolution</span>
-          <div className="flex-1">
-            <Segment
-              options={[{ id: '1x', label: '1×' }, { id: '2x', label: '2×' }, { id: '4x', label: '4×' }]}
-              value={resolution}
-              onChange={v => setResolution(v as ExportResolution)}
-            />
+        {/* Row 1: logo + name + Japanese | icon buttons — all nowrap so nothing wraps */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/herokit_logomark_dark.png" alt="" className="w-5 h-5 object-contain shrink-0" />
+            <div className="flex flex-col gap-[3px]">
+              <span className="text-sm font-bold tracking-wide leading-none whitespace-nowrap" style={{ color: T.text }}>HeroKit</span>
+              <span className="text-[10px] font-medium leading-none whitespace-nowrap" style={{ color: T.accent }}>ヒーロー</span>
+            </div>
           </div>
-        </div>
-
-        {/* Copy PNG for Figma plugin — hidden until plugin is finalised */}
-        {false && <button className="hidden" />}
-      </div>
-
-      <Divider />
-
-      {/* ── PRESETS ─────────────────────────────────────────────────────── */}
-      {hasSource && (<>
-        <SectionLabel>Presets</SectionLabel>
-        <div className="px-5 pb-4 grid grid-cols-2 gap-2">
-          {BUILT_IN_PRESETS.map(preset => (
-            <button
-              key={preset.name}
-              onClick={() => onChange(preset.state)}
-              className="group text-left rounded-xl border border-[#252525] bg-[#111] hover:border-white/20 hover:bg-[#161616] transition-all p-3"
-            >
-              <p className="text-[11px] font-semibold text-white/90 leading-tight mb-1">{preset.name}</p>
-              <p className="text-[9px] text-[#555] group-hover:text-[#777] transition-colors leading-relaxed">{preset.description}</p>
+          {/* Icon-only buttons to keep the row compact */}
+          <div className="flex items-center gap-1 shrink-0 ml-3">
+            <button onClick={onResetEffects} title="Reset effects"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all text-[11px] font-medium whitespace-nowrap"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-arrow-counter-clockwise text-sm" /> Reset
             </button>
-          ))}
+            <button onClick={onOpenLooks} title="Looks"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all text-[11px] font-medium whitespace-nowrap"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-bookmark-simple text-sm" /> Looks
+            </button>
+            {/* Icon-only — keeps the row compact. Info icon rather than a hamburger:
+                a hamburger signals "navigation drawer," but this opens a modal
+                (About / Effects Guide / Changelog) — info is the honest affordance. */}
+            <button onClick={() => setShowDocs(true)} title="Guide — about, effects & changelog"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-info text-base" />
+            </button>
+          </div>
         </div>
-        <Divider />
-      </>)}
-
-      {/* ── GALLERY ─────────────────────────────────────────────────────── */}
-      <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
-
-      <Divider />
-
-      {/* VIDEO EXPORT — hidden in v1, re-enable when video pipeline is solid */}
-      {false && <><SectionLabel>Video Export</SectionLabel><VideoExportSection videoUrl={state.videoUrl} state={state} /><Divider /></>}
-
-      {/* ── LAYERS ──────────────────────────────────────────────────────── */}
-      {hasSource && (<>
-        <SectionLabel>Layers</SectionLabel>
-        <LayersSection
-          layers={state.layers ?? []}
-          onChange={layers => set({ layers })}
-        />
-        <Divider />
-      </>)}
-
-      {/* ── BACKGROUND ──────────────────────────────────────────────────── */}
-      <SectionLabel>Background</SectionLabel>
-
-      <Row label="Color">
-        <div className="flex items-center gap-2.5">
-          <ColorDot value={state.bgColor} onChange={v => set({ bgColor: v })} size={24} />
-          <span className="text-xs text-[#666] font-mono uppercase tracking-wider">{state.bgColor}</span>
-        </div>
-      </Row>
-
-      {hasSource && (
-        <>
-          <Block label="Filter">
-            <div className="grid grid-cols-3 gap-1.5">
-              {FILTERS.map(f => (
-                <Chip key={f.id} label={f.label} active={state.imageFilter === f.id}
-                  onClick={() => set({ imageFilter: f.id })} />
-              ))}
-            </div>
-          </Block>
-
-          {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
-            <Row label="Tint color">
-              <ColorDot value={state.tintColor} onChange={v => set({ tintColor: v })} size={24} />
-            </Row>
-          )}
-
-          <Row label="Blur">
-            <Slider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
-              onChange={v => set({ imageBlur: v })} />
-          </Row>
-          <Row label="Opacity">
-            <Slider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
-              onChange={v => set({ imageOpacity: v / 100 })} />
-          </Row>
-
-          <Block label="Mask">
-            <div className="grid grid-cols-3 gap-1.5">
-              {MASKS.map(m => (
-                <Chip key={m.id} label={m.label} active={state.imageMask === m.id}
-                  onClick={() => set({ imageMask: m.id })} />
-              ))}
-            </div>
-          </Block>
-        </>
-      )}
-
-      <Divider />
-
-      {/* EFFECTS (atmosphere) — hidden in v1, re-enable when video export is solid */}
-      {false && <SectionLabel>Effects</SectionLabel>}
-      {false && <>
-
-      {/* 5-column grid — icon + label visible */}
-      <div className="px-5 pb-3 grid grid-cols-5 gap-1.5">
-        {ATMO.map(o => (
-          <button
-            key={o.id}
-            onClick={() => set({ atmosphereStyle: o.id })}
-            className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border transition-all
-              ${state.atmosphereStyle === o.id
-                ? 'bg-white/10 border-white/30 text-white'
-                : 'border-[#272727] text-[#454545] hover:border-[#3a3a3a] hover:text-[#888]'}`}
-          >
-            <i className={`ph ${o.icon} text-lg`} />
-            <span className="text-[9px] leading-none text-center font-medium">{o.label}</span>
-          </button>
-        ))}
       </div>
 
-      {hasAtmo && (
-        <>
-          <Row label="Colors">
-            <div className="flex gap-3 items-center">
-              <ColorDot value={state.meshColors.color1} onChange={v => set({ meshColors: { ...state.meshColors, color1: v } })} size={24} />
-              <ColorDot value={state.meshColors.color2} onChange={v => set({ meshColors: { ...state.meshColors, color2: v } })} size={24} />
-              <ColorDot value={state.meshColors.color3} onChange={v => set({ meshColors: { ...state.meshColors, color3: v } })} size={24} />
-            </div>
-          </Row>
+      {showDocs && <DocsPanel onClose={() => setShowDocs(false)} />}
 
-          {speedAtmos.includes(state.atmosphereStyle) && (
-            <Row label="Speed">
-              <div className="flex-1">
-                <Segment
-                  options={[{ id:'slow', label:'Slow' }, { id:'normal', label:'Mid' }, { id:'fast', label:'Fast' }]}
-                  value={state.meshSpeed}
-                  onChange={v => set({ meshSpeed: v as 'slow' | 'normal' | 'fast' })}
-                />
-              </div>
-            </Row>
-          )}
+      <div className="flex flex-col gap-5 px-4 pb-4">
 
-          {state.atmosphereStyle === 'fluid-mesh' && (<>
-            <Row label="Complexity">
-              <Slider value={state.meshComplexity} min={1} max={10} step={0.5} decimals={1} onChange={v => set({ meshComplexity: v })} />
-            </Row>
-            <Row label="Turbulence">
-              <Slider value={state.meshTurbulence} min={0} max={1} step={0.05} decimals={2} onChange={v => set({ meshTurbulence: v })} />
-            </Row>
-            <Row label="Zoom">
-              <Slider value={state.meshZoom} min={0.5} max={3} step={0.1} decimals={1} onChange={v => set({ meshZoom: v })} />
-            </Row>
-            <Row label="Contrast">
-              <Slider value={state.meshContrast} min={0.5} max={3} step={0.1} decimals={1} onChange={v => set({ meshContrast: v })} />
-            </Row>
-            <Row label="Frequency">
-              <Slider value={state.meshFrequency} min={1} max={10} step={0.5} decimals={1} onChange={v => set({ meshFrequency: v })} />
-            </Row>
-          </>)}
-
-          {state.atmosphereStyle === 'kinetic-flow' && (<>
-            <Row label="Speed">
-              <Slider value={state.kineticSpeed} min={0.1} max={3} step={0.1} decimals={1} onChange={v => set({ kineticSpeed: v })} />
-            </Row>
-            <Row label="Trail length">
-              <Slider value={state.kineticTrailLength} min={5} max={60} onChange={v => set({ kineticTrailLength: v })} />
-            </Row>
-            <Row label="Chaos">
-              <Slider value={state.kineticChaos} min={0.1} max={2} step={0.1} decimals={1} onChange={v => set({ kineticChaos: v })} />
-            </Row>
-          </>)}
-
-          {state.atmosphereStyle === 'molten-orb' && (<>
-            <Row label="Roughness">
-              <Slider value={state.moltenRoughness} min={0} max={1} step={0.05} decimals={2} onChange={v => set({ moltenRoughness: v })} />
-            </Row>
-            <Row label="Distortion">
-              <Slider value={state.moltenDistortion} min={0} max={1} step={0.05} decimals={2} onChange={v => set({ moltenDistortion: v })} />
-            </Row>
-          </>)}
-
-          {state.atmosphereStyle === 'volumetric-fog' && (<>
-            <Row label="Density">
-              <Slider value={state.fogDensity} min={0} max={1} step={0.05} decimals={2} onChange={v => set({ fogDensity: v })} />
-            </Row>
-            <Row label="Speed">
-              <Slider value={state.fogSpeed} min={0.05} max={2} step={0.05} decimals={2} onChange={v => set({ fogSpeed: v })} />
-            </Row>
-          </>)}
-
-          {/* Effects opacity — visible for all active effects */}
-          <Row label="Opacity">
-            <Slider
-              value={Math.round((state.effectsOpacity ?? 1) * 100)}
-              min={0} max={100}
-              onChange={v => set({ effectsOpacity: v / 100 })}
-            />
-          </Row>
-
-          {state.atmosphereStyle === 'generative' && (
-            <Block label="Preset">
-              <div className="grid grid-cols-5 gap-1.5">
-                {(['orbital','particles','matrix','fluid-grid','noise-field'] as GenerativePreset[]).map(p => (
-                  <Chip key={p}
-                    label={p === 'fluid-grid' ? 'Grid' : p === 'noise-field' ? 'Field' : p.charAt(0).toUpperCase() + p.slice(1)}
-                    active={state.generativePreset === p}
-                    onClick={() => set({ generativePreset: p })} />
-                ))}
-              </div>
-            </Block>
-          )}
-        </>
-      )}
-
-      </>}
-
-      <Divider />
-
-      {/* ── GRAIN & TEXTURE ─────────────────────────────────────────────── */}
-      <SectionLabel>Grain & Texture</SectionLabel>
-
-      <Row label="Film grain">
-        <Slider value={Math.round(state.noiseOpacity * 100)} min={0} max={50}
-          onChange={v => set({ noiseOpacity: v / 100 })} />
-      </Row>
-      {state.noiseOpacity > 0 && (
-        <Row label="Grain color">
-          <ColorDot value={state.noiseColor} onChange={v => set({ noiseColor: v })} size={24} />
-        </Row>
-      )}
-
-      <Block label="Pattern">
-        <div className="grid grid-cols-4 gap-1.5">
-          {PATTERNS.map(p => (
-            <Chip key={p.id} label={p.label} active={state.patternStyle === p.id}
-              onClick={() => set({ patternStyle: p.id })} />
-          ))}
-        </div>
-      </Block>
-
-      {state.patternStyle !== 'none' && (<>
-        <Row label="Opacity">
-          <Slider value={Math.round(state.patternOpacity * 100)} min={1} max={100}
-            onChange={v => set({ patternOpacity: v / 100 })} />
-        </Row>
-        <Row label="Color">
-          <ColorDot value={state.patternColor} onChange={v => set({ patternColor: v })} size={24} />
-        </Row>
-        <Block label="Blend mode">
-          <div className="grid grid-cols-5 gap-1.5">
-            {(['normal','overlay','screen','soft-light','multiply'] as const).map(bm => (
-              <Chip key={bm}
-                label={bm === 'soft-light' ? 'Soft' : bm.charAt(0).toUpperCase() + bm.slice(1)}
-                active={state.patternBlendMode === bm}
-                onClick={() => set({ patternBlendMode: bm })} />
-            ))}
-          </div>
-        </Block>
-      </>)}
-
-      <Divider />
-
-      {/* ── IMAGE GLITCH ────────────────────────────────────────────────── */}
-      <SectionLabel>Image Glitch</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ imageGlitchEnabled: !state.imageGlitchEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.imageGlitchEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.imageGlitchEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.imageGlitchEnabled && (<>
-        <Block label="Style">
-          <div className="grid grid-cols-3 gap-1.5">
-            {([
-              { id: 'digital', label: 'Digital'  },
-              { id: 'corrupt', label: 'Corrupt'  },
-              { id: 'signal',  label: 'Signal'   },
-            ] as const).map(s => (
-              <Chip key={s.id} label={s.label}
-                active={(state.imageGlitchStyle ?? 'digital') === s.id}
-                onClick={() => set({ imageGlitchStyle: s.id })} />
-            ))}
-          </div>
-        </Block>
-        <Row label="Intensity">
-          <Slider value={state.imageGlitchIntensity ?? 40} min={1} max={100}
-            onChange={v => set({ imageGlitchIntensity: v })} />
-        </Row>
-        <Row label="Shift">
-          <Slider value={state.imageGlitchShift ?? 30} min={1} max={150}
-            onChange={v => set({ imageGlitchShift: v })} />
-        </Row>
-        <Row label="RGB Split">
-          <Slider value={state.imageGlitchRgbSplit ?? 5} min={0} max={40}
-            onChange={v => set({ imageGlitchRgbSplit: v })} />
-        </Row>
-        <p className="text-[10px] text-[#444] px-5 pb-2 italic">
-          Each slider change regenerates the pattern.
-        </p>
-      </>)}
-
-      <Divider />
-
-      {/* ── MOTION BLUR ─────────────────────────────────────────────────── */}
-      <SectionLabel>Motion Blur</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ motionBlurEnabled: !state.motionBlurEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.motionBlurEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.motionBlurEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.motionBlurEnabled && (<>
-        <Row label="Type">
-          <div className="flex-1">
-            <Segment
-              options={[
-                { id: 'horizontal', label: '↔ Horiz' },
-                { id: 'vertical',   label: '↕ Vert'  },
-                { id: 'zoom',       label: '⊙ Zoom'  },
-              ]}
-              value={state.motionBlurType ?? 'horizontal'}
-              onChange={v => set({ motionBlurType: v as 'horizontal' | 'vertical' | 'zoom' })}
-            />
-          </div>
-        </Row>
-        <Row label="Strength">
-          <Slider value={state.motionBlurStrength ?? 20} min={2} max={80}
-            onChange={v => set({ motionBlurStrength: v })} />
-        </Row>
-      </>)}
-
-      <Divider />
-
-      {/* ── SPOT BLUR ───────────────────────────────────────────────────── */}
-      <SectionLabel>Spot Blur</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ spotBlurEnabled: !state.spotBlurEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.spotBlurEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.spotBlurEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.spotBlurEnabled && (<>
-        <Row label="BG blur">
-          <Slider value={state.spotBlurRadius ?? 18} min={2} max={40}
-            onChange={v => set({ spotBlurRadius: v })} />
-        </Row>
-        <Block>
-          <SpotBlurMap
-            spots={state.blurSpots ?? []}
-            onChange={spots => set({ blurSpots: spots })}
+        {/* ── Export ─────────────────────────────────────────────────────── */}
+        <HardwarePanel label="Image Export" number={1}>
+          <HwSegment
+            options={[{ id:'PNG',label:'PNG' },{ id:'WebP',label:'WebP' },{ id:'JPG',label:'JPG' }]}
+            value={format} onChange={v => setFormat(v as ExportFormat)}
           />
-        </Block>
-      </>)}
+          {/* Mounting plate — button set into panel surface, K.O. II style */}
+          <div className="hw-cta-mount">
+            <button onClick={handleExport} disabled={exporting} className="hw-cta">
+              {exporting
+                ? <><i className="ph ph-spinner animate-spin text-base" /> Exporting…</>
+                : <><i className="ph-bold ph-download-simple text-base" /> Export</>}
+            </button>
+          </div>
+          <Row label="Resolution">
+            <HwSegment
+              options={[{ id:'1x',label:'1×' },{ id:'2x',label:'2×' },{ id:'4x',label:'4×' }]}
+              value={resolution} onChange={v => setResolution(v as ExportResolution)}
+            />
+          </Row>
+        </HardwarePanel>
 
-      <Divider />
-
-      {/* ── HALFTONE ────────────────────────────────────────────────────── */}
-      <SectionLabel>Halftone</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ halftoneEnabled: !state.halftoneEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${
-            state.halftoneEnabled
-              ? 'bg-white border-white'
-              : 'bg-[#2a2a2a] border-[#3a3a3a]'
-          }`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-            state.halftoneEnabled
-              ? 'left-5 bg-black'
-              : 'left-0.5 bg-[#666]'
-          }`} />
-        </button>
-      </Row>
-
-      {state.halftoneEnabled && (<>
-        <Row label="Dot size">
-          <Slider value={state.halftoneDotSize} min={1} max={12} step={0.5} decimals={1}
-            onChange={v => set({ halftoneDotSize: v })} />
-        </Row>
-        <Row label="Spacing">
-          <Slider value={state.halftoneSpacing} min={3} max={30} step={0.5} decimals={1}
-            onChange={v => set({ halftoneSpacing: v })} />
-        </Row>
-        <Row label="Color">
-          <ColorDot value={state.halftoneColor} onChange={v => set({ halftoneColor: v })} size={24} />
-        </Row>
-        <Row label="Opacity">
-          <Slider value={Math.round((state.halftoneOpacity ?? 1) * 100)} min={0} max={100}
-            onChange={v => set({ halftoneOpacity: v / 100 })} />
-        </Row>
-        <Row label="Invert">
-          <button
-            onClick={() => set({ halftoneInvert: !state.halftoneInvert })}
-            className={`relative w-10 h-5 rounded-full border transition-all ${
-              state.halftoneInvert
-                ? 'bg-white border-white'
-                : 'bg-[#2a2a2a] border-[#3a3a3a]'
-            }`}
+        {/* ── Source ─────────────────────────────────────────────────────── */}
+        <HardwarePanel label="Source" number={2}>
+          <label
+            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+            onDragOver={e => e.preventDefault()}
+            className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
+            style={{ borderColor: T.border, color: T.muted }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = T.text}
+            onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
           >
-            <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${
-              state.halftoneInvert
-                ? 'left-5 bg-black'
-                : 'left-0.5 bg-[#666]'
-            }`} />
-          </button>
-        </Row>
-      </>)}
+            <i className="ph ph-upload-simple text-xl" />
+            <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
+            <input type="file" className="hidden" accept="image/*"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+          </label>
+          {hasSource && (
+            <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
+              className="w-full py-2 text-[11px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Clear source
+            </button>
+          )}
+        </HardwarePanel>
 
-      <Divider />
-
-      {/* ── COLOR GRADE ─────────────────────────────────────────────────── */}
-      <SectionLabel>Color Grade</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ colorGradeEnabled: !state.colorGradeEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.colorGradeEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.colorGradeEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.colorGradeEnabled && (<>
-        <Block label="Preset">
-          <div className="grid grid-cols-3 gap-1.5">
-            {([
-              { id: 'teal-orange',  label: 'Teal & Orange', chip: 'linear-gradient(135deg,#0d9488,#f97316)' },
-              { id: 'golden-hour',  label: 'Golden Hour',   chip: 'linear-gradient(135deg,#f59e0b,#b45309)' },
-              { id: 'arctic',       label: 'Arctic',        chip: 'linear-gradient(135deg,#bae6fd,#1e40af)' },
-              { id: 'noir',         label: 'Noir',          chip: 'linear-gradient(135deg,#111,#555)' },
-              { id: 'moody',        label: 'Moody',         chip: 'linear-gradient(135deg,#1e1b4b,#4c1d95)' },
-              { id: 'vellichor',    label: 'Vellichor',     chip: 'linear-gradient(135deg,#92400e,#d97706)' },
-              { id: 'polaroid',     label: 'Polaroid',      chip: 'linear-gradient(135deg,#fde68a,#fbbf24)' },
-              { id: 'kodachrome',   label: 'Kodachrome',    chip: 'linear-gradient(135deg,#dc2626,#f97316)' },
-              { id: 'cross-process',label: 'X-Process',     chip: 'linear-gradient(135deg,#16a34a,#ca8a04)' },
-              { id: 'lomo',         label: 'Lomography',    chip: 'linear-gradient(135deg,#7c3aed,#db2777)' },
-              { id: 'faded',        label: 'Faded',         chip: 'linear-gradient(135deg,#94a3b8,#cbd5e1)' },
-              { id: 'vhs',          label: 'VHS',           chip: 'linear-gradient(135deg,#166534,#15803d)' },
-            ] as const).map(p => (
-              <button
-                key={p.id}
-                onClick={() => set({ colorGradePreset: p.id })}
-                className={`relative rounded-lg overflow-hidden border transition-all group ${state.colorGradePreset === p.id ? 'border-white' : 'border-[#2a2a2a] hover:border-[#555]'}`}
-                style={{ height: 52 }}
-              >
-                <div className="absolute inset-0" style={{ background: p.chip }} />
-                <div className={`absolute inset-0 transition-all ${state.colorGradePreset === p.id ? 'bg-black/10' : 'bg-black/40 group-hover:bg-black/20'}`} />
-                <span className="absolute bottom-1.5 left-0 right-0 text-center text-[9px] font-semibold text-white drop-shadow leading-tight px-1">{p.label}</span>
-              </button>
-            ))}
-          </div>
-        </Block>
-        <Row label="Strength">
-          <Slider value={Math.round((state.colorGradeStrength ?? 1) * 100)} min={0} max={100}
-            onChange={v => set({ colorGradeStrength: v / 100 })} />
-        </Row>
-      </>)}
-
-      <Divider />
-
-      {/* ── DISPERSION ──────────────────────────────────────────────────── */}
-      <SectionLabel>Dispersion</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ dispersionEnabled: !state.dispersionEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.dispersionEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.dispersionEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.dispersionEnabled && (<>
-        <Row label="Threshold">
-          <Slider value={state.dispersionThreshold ?? 80} min={1} max={240}
-            onChange={v => set({ dispersionThreshold: v })} />
-        </Row>
-        <Row label="Strength">
-          <Slider value={state.dispersionStrength ?? 60} min={5} max={180}
-            onChange={v => set({ dispersionStrength: v })} />
-        </Row>
-        <Row label="Spread">
-          <Slider value={Math.round((state.dispersionSpread ?? 0.6) * 100)} min={0} max={100}
-            onChange={v => set({ dispersionSpread: v / 100 })} />
-        </Row>
-        <Block label="Direction">
-          <div className="grid grid-cols-5 gap-1.5">
-            {([
-              { id: 'up',     icon: 'ph-arrow-up',          label: 'Up'     },
-              { id: 'right',  icon: 'ph-arrow-right',        label: 'Right'  },
-              { id: 'down',   icon: 'ph-arrow-down',         label: 'Down'   },
-              { id: 'radial', icon: 'ph-arrows-out-simple',  label: 'Out'    },
-              { id: 'chaos',  icon: 'ph-shuffle',            label: 'Chaos'  },
-            ] as const).map(d => (
-              <button
-                key={d.id}
-                onClick={() => set({ dispersionDirection: d.id })}
-                title={d.label}
-                className={`flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border transition-all ${
-                  (state.dispersionDirection ?? 'up') === d.id
-                    ? 'bg-white/10 border-white/35 text-white'
-                    : 'border-[#252525] text-[#444] hover:border-[#3a3a3a] hover:text-[#888]'
-                }`}
-              >
-                <i className={`ph ${d.icon} text-base`} />
-                <span className="text-[9px]">{d.label}</span>
-              </button>
-            ))}
-          </div>
-        </Block>
-        <p className="text-[10px] text-[#444] px-5 pb-2 italic">
-          High threshold (~140) = silhouette only. Low threshold = full texture scatter.
-        </p>
-      </>)}
-
-      <Divider />
-
-      {/* ── RGB CHANNEL SMEAR ───────────────────────────────────────────── */}
-      <SectionLabel>RGB Channel Smear</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ channelSmearEnabled: !state.channelSmearEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.channelSmearEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.channelSmearEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.channelSmearEnabled && (<>
-        <Row label="Threshold">
-          <Slider value={state.channelSmearThreshold ?? 80} min={0} max={240}
-            onChange={v => set({ channelSmearThreshold: v })} />
-        </Row>
-
-        {/* Per-channel direction pickers */}
-        {([
-          { key: 'channelSmearRDir' as const, label: 'R', color: '#f87171' },
-          { key: 'channelSmearGDir' as const, label: 'G', color: '#4ade80' },
-          { key: 'channelSmearBDir' as const, label: 'B', color: '#60a5fa' },
-        ]).map(({ key, label, color }) => (
-          <div key={key} className="flex items-center gap-3 px-5 py-[7px]">
-            <span className="text-[12px] font-bold w-4 shrink-0 tabular-nums" style={{ color }}>{label}</span>
-            <div className="flex gap-1 flex-1">
-              {([
-                { id: 'up',    icon: 'ph-arrow-up'    },
-                { id: 'down',  icon: 'ph-arrow-down'  },
-                { id: 'left',  icon: 'ph-arrow-left'  },
-                { id: 'right', icon: 'ph-arrow-right' },
-              ] as const).map(d => (
-                <button
-                  key={d.id}
-                  onClick={() => set({ [key]: d.id } as any)}
-                  className={`flex-1 py-2 flex items-center justify-center rounded-md border transition-all
-                    ${(state[key] ?? (label === 'R' ? 'up' : label === 'G' ? 'left' : 'right')) === d.id
-                      ? 'border-white/40 bg-white/10 text-white'
-                      : 'border-[#252525] text-[#444] hover:border-[#3a3a3a] hover:text-[#888]'
-                    }`}
-                >
-                  <i className={`ph ${d.icon} text-sm`} />
+        {/* ── Presets — hidden for now, kept for later ───────────────────── */}
+        {false && hasSource && (
+          <HardwarePanel label="Presets">
+            <div className="grid grid-cols-2 gap-2">
+              {BUILT_IN_PRESETS.map(preset => (
+                <button key={preset.name} onClick={() => onChange(preset.state)}
+                  className="relative text-left rounded-xl p-3 border transition-all pattern-btn"
+                  style={{ background: T.panel, borderColor: T.border }}>
+                  {/* Vibe dot — top-right corner, colour signals what the preset does */}
+                  {PRESET_DOT[preset.name] && (
+                    <span
+                      className="absolute"
+                      style={{
+                        top: 7, right: 7,
+                        width: 6, height: 6,
+                        borderRadius: '50%',
+                        background: PRESET_DOT[preset.name],
+                        boxShadow: `0 0 0 1.5px rgba(255,255,255,0.55)`,
+                      }}
+                    />
+                  )}
+                  <p className="text-[11px] font-bold leading-tight pr-3" style={{ color: T.text }}>{preset.name}</p>
+                  <p className="text-[9px] mt-0.5 leading-relaxed" style={{ color: T.dim }}>{preset.description}</p>
                 </button>
               ))}
             </div>
+          </HardwarePanel>
+        )}
+
+        {/* ── Gallery ────────────────────────────────────────────────────── */}
+        <HardwarePanel label="Gallery" number={3}>
+          <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
+        </HardwarePanel>
+
+        {/* ── Layers ─────────────────────────────────────────────────────── */}
+        {hasSource && (
+          <HardwarePanel label="Layers" number={4}>
+            <LayersSection layers={state.layers ?? []} onChange={layers => set({ layers })} />
+          </HardwarePanel>
+        )}
+
+        {/* ── Background — only shown when an image is loaded ────────────── */}
+        {hasSource && (
+          <HardwarePanel label="Background" number={5}>
+            <div>
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Filter</p>
+              <PatternGrid options={FILTERS} value={state.imageFilter}
+                onChange={v => set({ imageFilter: v as ImageFilter })} columns={3} />
+            </div>
+            {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
+              <Row label="Tint color">
+                <ColorSwatch value={state.tintColor} onChange={v => set({ tintColor: v })} />
+              </Row>
+            )}
+            <Row label="Blur">
+              <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
+                onChange={v => set({ imageBlur: v })} />
+            </Row>
+            <Row label="Opacity">
+              <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
+                onChange={v => set({ imageOpacity: v / 100 })} />
+            </Row>
+            <div>
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Mask</p>
+              <PatternGrid options={MASKS} value={state.imageMask}
+                onChange={v => set({ imageMask: v as ImageMask })} columns={3} />
+            </div>
+            {/* Only shown when a mask is active — this is the color the fade
+                reveals underneath. Contextual rather than a permanent row, since
+                it's irrelevant the rest of the time. */}
+            {state.imageMask !== 'none' && (
+              <Row label="Mask color">
+                <ColorSwatch value={state.maskColor} onChange={v => set({ maskColor: v })} />
+              </Row>
+            )}
+          </HardwarePanel>
+        )}
+
+        {/* ── Grain & Texture ────────────────────────────────────────────── */}
+        <HardwarePanel label="Grain & Texture" number={6} active={state.noiseOpacity > 0}>
+          {/* Knob cluster sub-panel — machined recess in the card surface.
+              Darker background + deep inset shadow reads as physically depressed,
+              bright bottom rim catches the light on the lower machined edge.     */}
+          <div style={{
+            background: '#e4e1db',
+            borderRadius: 10,
+            border: '1px solid #cac7c0',
+            boxShadow: [
+              'inset 0 3px 7px rgba(0,0,0,0.11)',
+              'inset 0 1px 3px rgba(0,0,0,0.07)',
+              '0 1px 0 rgba(255,255,255,0.70)',
+            ].join(', '),
+            padding: '16px 8px 14px',
+          }}>
+            <div className="flex justify-around">
+              <KnobSlider label="Grain" value={Math.round(state.noiseOpacity * 100)}
+                min={0} max={50} onChange={v => set({ noiseOpacity: v / 100 })} />
+              <KnobSlider label="Vignette" value={Math.round((state.vignetteStrength ?? 0) * 100)}
+                min={0} max={100} onChange={v => set({ vignetteStrength: v / 100 })} />
+              <KnobSlider label="Overlay" value={Math.round(state.overlayOpacity * 100)}
+                min={0} max={90} onChange={v => set({ overlayOpacity: v / 100 })} />
+            </div>
           </div>
-        ))}
+          {state.noiseOpacity > 0 && (
+            <Row label="Grain tint">
+              <ColorSwatch value={state.noiseColor} onChange={v => set({ noiseColor: v })} />
+            </Row>
+          )}
+          <div style={{ height: 1, background: T.border }} />
+          <div>
+            <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Pattern overlay</p>
+            <PatternGrid options={PATTERNS} value={state.patternStyle}
+              onChange={v => set({ patternStyle: v as PatternStyle })} columns={4} />
+          </div>
+          {state.patternStyle !== 'none' && (
+            <>
+              <Row label="Opacity">
+                <HwSlider value={Math.round(state.patternOpacity * 100)} min={1} max={100}
+                  onChange={v => set({ patternOpacity: v / 100 })} />
+              </Row>
+              <Row label="Color">
+                <ColorSwatch value={state.patternColor} onChange={v => set({ patternColor: v })} />
+              </Row>
+              <div>
+                <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Blend mode</p>
+                <PatternGrid
+                  options={(['normal','overlay','screen','soft-light','multiply'] as const).map(bm => ({
+                    id: bm, label: bm === 'soft-light' ? 'Soft' : bm.charAt(0).toUpperCase() + bm.slice(1),
+                  }))}
+                  value={state.patternBlendMode}
+                  onChange={v => set({ patternBlendMode: v as typeof state.patternBlendMode })}
+                  columns={5}
+                  compact
+                />
+              </div>
+            </>
+          )}
+        </HardwarePanel>
 
-        <p className="text-[10px] text-[#444] px-5 pb-2 italic">
-          Lower threshold = more pixels smear. Try with Warp for prismatic oil-paint results.
-        </p>
-      </>)}
+        {/* ── Effects ────────────────────────────────────────────────────── */}
+        <HardwarePanel label="Effects" number={7}>
 
-      <Divider />
-
-      {/* ── DISPLACEMENT WARP ───────────────────────────────────────────── */}
-      <SectionLabel>Displacement Warp</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ warpEnabled: !state.warpEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.warpEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.warpEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.warpEnabled && (<>
-        <Row label="Style">
-          <div className="flex-1">
-            <Segment
-              options={[{ id: 'warp', label: 'Warp' }, { id: 'swirl', label: 'Swirl' }, { id: 'flow', label: 'Flow' }]}
-              value={state.warpStyle ?? 'warp'}
-              onChange={v => set({ warpStyle: v as 'warp' | 'swirl' | 'flow' })}
+          {/* Image Glitch */}
+          <EffectSection label="Image Glitch" number={1} enabled={state.imageGlitchEnabled}
+            onToggle={v => set({ imageGlitchEnabled: v })}>
+            <PatternGrid
+              options={[{ id:'digital',label:'Digital' },{ id:'corrupt',label:'Corrupt' },{ id:'signal',label:'Signal' }]}
+              value={state.imageGlitchStyle ?? 'digital'}
+              onChange={v => set({ imageGlitchStyle: v as typeof state.imageGlitchStyle })}
+              columns={3}
             />
-          </div>
-        </Row>
-        <Row label="Strength">
-          <Slider value={state.warpStrength ?? 30} min={2} max={120} step={1}
-            onChange={v => set({ warpStrength: v })} />
-        </Row>
-        <Row label="Scale">
-          <Slider value={state.warpScale ?? 3} min={0.5} max={12} step={0.5} decimals={1}
-            onChange={v => set({ warpScale: v })} />
-        </Row>
-        <Row label="Detail">
-          <Slider value={state.warpOctaves ?? 3} min={1} max={5} step={1}
-            onChange={v => set({ warpOctaves: v })} />
-        </Row>
-        <p className="text-[10px] text-[#444] px-5 pb-2 italic">
-          Combine with Pixel Sort for painterly results.
-        </p>
-      </>)}
+            <Row label="Intensity">
+              <HwSlider value={state.imageGlitchIntensity ?? 40} min={1} max={100}
+                onChange={v => set({ imageGlitchIntensity: v })} />
+            </Row>
+            <Row label="Shift">
+              <HwSlider value={state.imageGlitchShift ?? 30} min={1} max={150}
+                onChange={v => set({ imageGlitchShift: v })} />
+            </Row>
+            <Row label="RGB Split">
+              <HwSlider value={state.imageGlitchRgbSplit ?? 5} min={0} max={40}
+                onChange={v => set({ imageGlitchRgbSplit: v })} />
+            </Row>
+          </EffectSection>
 
-      <Divider />
-
-      {/* ── EDGE GLOW / NEON ────────────────────────────────────────────── */}
-      <SectionLabel>Edge Glow</SectionLabel>
-      <Row label="Enable">
-        <button onClick={() => set({ edgeGlowEnabled: !state.edgeGlowEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.edgeGlowEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}>
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.edgeGlowEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-      {state.edgeGlowEnabled && (<>
-        <Row label="Glow colour"><ColorDot value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} size={24} /></Row>
-        <Row label="Intensity"><Slider value={state.edgeGlowIntensity ?? 65} min={10} max={100} onChange={v => set({ edgeGlowIntensity: v })} /></Row>
-        <Row label="Bloom"><Slider value={state.edgeGlowBloom ?? 8} min={1} max={30} onChange={v => set({ edgeGlowBloom: v })} /></Row>
-        <Row label="Darken base"><Slider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90} onChange={v => set({ edgeGlowDarken: v / 100 })} /></Row>
-      </>)}
-
-      <Divider />
-
-      {/* ── SPLIT TONE ──────────────────────────────────────────────────── */}
-      <SectionLabel>Split Tone</SectionLabel>
-      <Row label="Enable">
-        <button onClick={() => set({ splitToneEnabled: !state.splitToneEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.splitToneEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}>
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.splitToneEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-      {state.splitToneEnabled && (<>
-        <Row label="Shadows"><ColorDot value={state.splitToneShadowColor ?? '#1a237e'} onChange={v => set({ splitToneShadowColor: v })} size={24} /></Row>
-        <Row label="Highlights"><ColorDot value={state.splitToneHighlightColor ?? '#ff6d00'} onChange={v => set({ splitToneHighlightColor: v })} size={24} /></Row>
-        <Row label="Strength"><Slider value={state.splitToneStrength ?? 60} min={1} max={100} onChange={v => set({ splitToneStrength: v })} /></Row>
-        <Row label="Balance"><Slider value={(state.splitToneBalance ?? 0) + 50} min={0} max={100} onChange={v => set({ splitToneBalance: v - 50 })} /></Row>
-      </>)}
-
-      <Divider />
-
-      {/* ── PIXEL SORT ──────────────────────────────────────────────────── */}
-      <SectionLabel>Pixel Sort</SectionLabel>
-
-      <Row label="Enable">
-        <button
-          onClick={() => set({ pixelSortEnabled: !state.pixelSortEnabled })}
-          className={`relative w-10 h-5 rounded-full border transition-all ${state.pixelSortEnabled ? 'bg-white border-white' : 'bg-[#2a2a2a] border-[#3a3a3a]'}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${state.pixelSortEnabled ? 'left-5 bg-black' : 'left-0.5 bg-[#666]'}`} />
-        </button>
-      </Row>
-
-      {state.pixelSortEnabled && (<>
-        <Row label="Threshold">
-          <Slider value={state.pixelSortThreshold ?? 128} min={0} max={255}
-            onChange={v => set({ pixelSortThreshold: v })} />
-        </Row>
-        <Row label="Direction">
-          <div className="flex-1">
-            <Segment
-              options={[{ id:'up', label:'Up' }, { id:'down', label:'Down' }, { id:'left', label:'Left' }, { id:'right', label:'Right' }]}
-              value={state.pixelSortDirection ?? 'up'}
-              onChange={v => set({ pixelSortDirection: v as 'up'|'down'|'left'|'right' })}
+          {/* Motion Blur */}
+          <EffectSection label="Motion Blur" number={2} enabled={state.motionBlurEnabled}
+            onToggle={v => set({ motionBlurEnabled: v })}>
+            <HwSegment
+              options={[{ id:'horizontal',label:'↔ Horiz' },{ id:'vertical',label:'↕ Vert' },{ id:'zoom',label:'⊙ Zoom' }]}
+              value={state.motionBlurType ?? 'horizontal'}
+              onChange={v => set({ motionBlurType: v as typeof state.motionBlurType })}
             />
-          </div>
-        </Row>
-        <Row label="Sort by">
-          <div className="flex-1">
-            <Segment
-              options={[{ id:'brightness', label:'Luma' }, { id:'hue', label:'Hue' }, { id:'saturation', label:'Sat' }]}
-              value={state.pixelSortMode ?? 'brightness'}
-              onChange={v => set({ pixelSortMode: v as 'brightness'|'hue'|'saturation' })}
-            />
-          </div>
-        </Row>
-        <p className="text-[10px] text-[#444] px-5 pb-2 italic">
-          Processing may take a moment on large images.
-        </p>
-      </>)}
+            <Row label="Strength">
+              <HwSlider value={state.motionBlurStrength ?? 20} min={2} max={80}
+                onChange={v => set({ motionBlurStrength: v })} />
+            </Row>
+          </EffectSection>
 
-      <Divider />
+          {/* Spot Blur */}
+          <EffectSection label="Spot Blur" number={3} enabled={state.spotBlurEnabled}
+            onToggle={v => set({ spotBlurEnabled: v })}>
+            <Row label="BG blur">
+              <HwSlider value={state.spotBlurRadius ?? 18} min={2} max={40}
+                onChange={v => set({ spotBlurRadius: v })} />
+            </Row>
+            <SpotBlurMap spots={state.blurSpots ?? []} onChange={spots => set({ blurSpots: spots })} />
+          </EffectSection>
 
-      {/* ── LIGHT & FX ──────────────────────────────────────────────────── */}
-      <SectionLabel>Light & FX</SectionLabel>
-
-      <Row label="Dark overlay">
-        <Slider value={Math.round(state.overlayOpacity * 100)} min={0} max={90}
-          onChange={v => set({ overlayOpacity: v / 100 })} />
-      </Row>
-      <Row label="Vignette">
-        <Slider value={Math.round((state.vignetteStrength ?? 0) * 100)} min={0} max={100}
-          onChange={v => set({ vignetteStrength: v / 100 })} />
-      </Row>
-      <Row label="Ambient" tall>
-        <div className="flex items-center gap-2.5 flex-1">
-          <Slider value={Math.round(state.ambientLightIntensity * 100)} min={0} max={100}
-            onChange={v => set({ ambientLightIntensity: v / 100 })} />
-          <ColorDot value={state.ambientLightColor} onChange={v => set({ ambientLightColor: v })} size={24} />
-        </div>
-      </Row>
-
-      {state.ambientLightIntensity > 0 && (
-        <Block label="Ambient position">
-          <div className="grid grid-cols-3 gap-1 w-[78px]">
-            {(['tl','tc','tr','ml','mc','mr','bl','bc','br'] as AmbientPosition[]).map(pos => (
-              <button key={pos} onClick={() => set({ ambientLightPosition: pos })}
-                className={`aspect-square rounded-sm transition-all
-                  ${state.ambientLightPosition === pos ? 'bg-white' : 'bg-[#2a2a2a] hover:bg-[#3c3c3c]'}`}
+          {/* Halftone */}
+          <EffectSection label="Halftone" number={4} enabled={state.halftoneEnabled}
+            onToggle={v => set({ halftoneEnabled: v })}>
+            <div>
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Pattern</p>
+              <PatternGrid
+                options={[
+                  { id:'dot',label:'Dot' },{ id:'line',label:'Line' },{ id:'crosshatch',label:'Crosshatch' },
+                ]}
+                value={state.halftonePattern}
+                onChange={v => set({ halftonePattern: v as typeof state.halftonePattern })}
+                columns={3}
               />
+            </div>
+            <Row label={state.halftonePattern === 'dot' ? 'Dot size' : 'Thickness'}>
+              <HwSlider value={state.halftoneDotSize} min={1} max={12} step={0.5} decimals={1}
+                onChange={v => set({ halftoneDotSize: v })} />
+            </Row>
+            <Row label="Spacing">
+              <HwSlider value={state.halftoneSpacing} min={3} max={30} step={0.5} decimals={1}
+                onChange={v => set({ halftoneSpacing: v })} />
+            </Row>
+            {state.halftonePattern !== 'dot' && (
+              <Row label="Angle">
+                {/* Screen angle — real CMYK separations stagger plates at 15/45/75°
+                    to avoid moiré. Crosshatch draws a second pass at angle+90°. */}
+                <HwSlider value={state.halftoneAngle} min={0} max={180}
+                  onChange={v => set({ halftoneAngle: v })} />
+              </Row>
+            )}
+            <Row label="Color">
+              <ColorSwatch value={state.halftoneColor} onChange={v => set({ halftoneColor: v })} />
+            </Row>
+            <Row label="Opacity">
+              <HwSlider value={Math.round((state.halftoneOpacity ?? 1) * 100)} min={0} max={100}
+                onChange={v => set({ halftoneOpacity: v / 100 })} />
+            </Row>
+            <Row label="Invert">
+              <TactileToggle value={state.halftoneInvert} onChange={v => set({ halftoneInvert: v })} />
+            </Row>
+          </EffectSection>
+
+          {/* Color Grade */}
+          <EffectSection label="Color Grade" number={5} enabled={state.colorGradeEnabled}
+            onToggle={v => set({ colorGradeEnabled: v })}>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([
+                { id: 'teal-orange',   label: 'Teal & Orange', chip: 'linear-gradient(135deg,#0d9488,#f97316)' },
+                { id: 'golden-hour',   label: 'Golden Hour',   chip: 'linear-gradient(135deg,#f59e0b,#b45309)' },
+                { id: 'arctic',        label: 'Arctic',        chip: 'linear-gradient(135deg,#bae6fd,#1e40af)' },
+                { id: 'noir',          label: 'Noir',          chip: 'linear-gradient(135deg,#111,#555)' },
+                { id: 'moody',         label: 'Moody',         chip: 'linear-gradient(135deg,#1e1b4b,#4c1d95)' },
+                { id: 'vellichor',     label: 'Vellichor',     chip: 'linear-gradient(135deg,#92400e,#d97706)' },
+                { id: 'polaroid',      label: 'Polaroid',      chip: 'linear-gradient(135deg,#fde68a,#fbbf24)' },
+                { id: 'kodachrome',    label: 'Kodachrome',    chip: 'linear-gradient(135deg,#dc2626,#f97316)' },
+                { id: 'cross-process', label: 'X-Process',     chip: 'linear-gradient(135deg,#16a34a,#ca8a04)' },
+                { id: 'lomo',          label: 'Lomography',    chip: 'linear-gradient(135deg,#7c3aed,#db2777)' },
+                { id: 'faded',         label: 'Faded',         chip: 'linear-gradient(135deg,#94a3b8,#cbd5e1)' },
+                { id: 'vhs',           label: 'VHS',           chip: 'linear-gradient(135deg,#166534,#15803d)' },
+              ] as const).map(p => (
+                <button key={p.id} onClick={() => set({ colorGradePreset: p.id })}
+                  className="relative rounded-lg overflow-hidden border transition-all"
+                  style={{
+                    height: 52,
+                    borderColor: state.colorGradePreset === p.id ? T.text : T.border,
+                    boxShadow: state.colorGradePreset === p.id ? `0 0 0 2px ${T.accent}` : 'none',
+                  }}>
+                  <div className="absolute inset-0" style={{ background: p.chip }} />
+                  <div className="absolute inset-0 flex items-end justify-center pb-1.5"
+                    style={{ background: state.colorGradePreset === p.id ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.35)' }}>
+                    <span className="text-[8px] font-bold text-white drop-shadow text-center leading-tight px-1">{p.label}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <Row label="Strength">
+              <HwSlider value={Math.round((state.colorGradeStrength ?? 1) * 100)} min={0} max={100}
+                onChange={v => set({ colorGradeStrength: v / 100 })} />
+            </Row>
+          </EffectSection>
+
+          {/* Dispersion */}
+          <EffectSection label="Dispersion" number={6} enabled={state.dispersionEnabled}
+            onToggle={v => set({ dispersionEnabled: v })}>
+            <Row label="Threshold">
+              <HwSlider value={state.dispersionThreshold ?? 80} min={1} max={240}
+                onChange={v => set({ dispersionThreshold: v })} />
+            </Row>
+            <Row label="Strength">
+              <HwSlider value={state.dispersionStrength ?? 60} min={5} max={180}
+                onChange={v => set({ dispersionStrength: v })} />
+            </Row>
+            <Row label="Spread">
+              <HwSlider value={Math.round((state.dispersionSpread ?? 0.6) * 100)} min={0} max={100}
+                onChange={v => set({ dispersionSpread: v / 100 })} />
+            </Row>
+            <div>
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Direction</p>
+              <PatternGrid
+                options={[
+                  { id:'up',label:'Up' },{ id:'right',label:'Right' },{ id:'down',label:'Down' },
+                  { id:'radial',label:'Out' },{ id:'chaos',label:'Chaos' },
+                ]}
+                value={state.dispersionDirection ?? 'up'}
+                onChange={v => set({ dispersionDirection: v as typeof state.dispersionDirection })}
+                columns={5}
+              />
+            </div>
+          </EffectSection>
+
+          {/* RGB Channel Smear */}
+          <EffectSection label="RGB Channel Smear" number={7} enabled={state.channelSmearEnabled}
+            onToggle={v => set({ channelSmearEnabled: v })}>
+            <Row label="Threshold">
+              <HwSlider value={state.channelSmearThreshold ?? 80} min={0} max={240}
+                onChange={v => set({ channelSmearThreshold: v })} />
+            </Row>
+            {([
+              { key: 'channelSmearRDir' as const, label: 'R', color: '#e84320' },
+              { key: 'channelSmearGDir' as const, label: 'G', color: '#16a34a' },
+              { key: 'channelSmearBDir' as const, label: 'B', color: '#2563eb' },
+            ]).map(({ key, label, color }) => (
+              <div key={key} className="flex items-center gap-3">
+                <span className="text-[12px] font-bold w-4 shrink-0 tabular-nums" style={{ color }}>{label}</span>
+                <PatternGrid
+                  options={[{ id:'up',label:'↑' },{ id:'down',label:'↓' },{ id:'left',label:'←' },{ id:'right',label:'→' }]}
+                  value={state[key] ?? (label === 'R' ? 'up' : label === 'G' ? 'left' : 'right')}
+                  onChange={v => set({ [key]: v } as any)}
+                  columns={4}
+                />
+              </div>
             ))}
+          </EffectSection>
+
+          {/* Displacement Warp */}
+          <EffectSection label="Displacement Warp" number={8} enabled={state.warpEnabled}
+            onToggle={v => set({ warpEnabled: v })}>
+            <HwSegment
+              options={[{ id:'warp',label:'Warp' },{ id:'swirl',label:'Swirl' },{ id:'flow',label:'Flow' }]}
+              value={state.warpStyle ?? 'warp'}
+              onChange={v => set({ warpStyle: v as typeof state.warpStyle })}
+            />
+            <Row label="Strength">
+              <HwSlider value={state.warpStrength ?? 30} min={2} max={120}
+                onChange={v => set({ warpStrength: v })} />
+            </Row>
+            <Row label="Scale">
+              <HwSlider value={state.warpScale ?? 3} min={0.5} max={12} step={0.5} decimals={1}
+                onChange={v => set({ warpScale: v })} />
+            </Row>
+            <Row label="Detail">
+              <HwSlider value={state.warpOctaves ?? 3} min={1} max={5}
+                onChange={v => set({ warpOctaves: v })} />
+            </Row>
+          </EffectSection>
+
+          {/* Edge Glow */}
+          <EffectSection label="Edge Glow" number={9} enabled={state.edgeGlowEnabled}
+            onToggle={v => set({ edgeGlowEnabled: v })}>
+            <Row label="Color">
+              <ColorSwatch value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} />
+            </Row>
+            <Row label="Intensity">
+              <HwSlider value={state.edgeGlowIntensity ?? 65} min={10} max={100}
+                onChange={v => set({ edgeGlowIntensity: v })} />
+            </Row>
+            <Row label="Bloom">
+              <HwSlider value={state.edgeGlowBloom ?? 8} min={1} max={30}
+                onChange={v => set({ edgeGlowBloom: v })} />
+            </Row>
+            <Row label="Darken">
+              <HwSlider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90}
+                onChange={v => set({ edgeGlowDarken: v / 100 })} />
+            </Row>
+          </EffectSection>
+
+          {/* Split Tone */}
+          <EffectSection label="Split Tone" number={10} enabled={state.splitToneEnabled}
+            onToggle={v => set({ splitToneEnabled: v })}>
+            <Row label="Shadows">
+              <ColorSwatch value={state.splitToneShadowColor ?? '#1a237e'} onChange={v => set({ splitToneShadowColor: v })} />
+            </Row>
+            <Row label="Highlights">
+              <ColorSwatch value={state.splitToneHighlightColor ?? '#ff6d00'} onChange={v => set({ splitToneHighlightColor: v })} />
+            </Row>
+            <Row label="Strength">
+              <HwSlider value={state.splitToneStrength ?? 60} min={1} max={100}
+                onChange={v => set({ splitToneStrength: v })} />
+            </Row>
+            <Row label="Balance">
+              <HwSlider value={(state.splitToneBalance ?? 0) + 50} min={0} max={100}
+                onChange={v => set({ splitToneBalance: v - 50 })} />
+            </Row>
+          </EffectSection>
+
+          {/* Pixel Sort */}
+          <EffectSection label="Pixel Sort" number={11} enabled={state.pixelSortEnabled}
+            onToggle={v => set({ pixelSortEnabled: v })}>
+            <Row label="Threshold">
+              <HwSlider value={state.pixelSortThreshold ?? 128} min={0} max={255}
+                onChange={v => set({ pixelSortThreshold: v })} />
+            </Row>
+            <HwSegment
+              options={[{ id:'up',label:'Up' },{ id:'down',label:'Down' },{ id:'left',label:'Left' },{ id:'right',label:'Right' }]}
+              value={state.pixelSortDirection ?? 'up'}
+              onChange={v => set({ pixelSortDirection: v as typeof state.pixelSortDirection })}
+            />
+            <HwSegment
+              options={[{ id:'brightness',label:'Luma' },{ id:'hue',label:'Hue' },{ id:'saturation',label:'Sat' }]}
+              value={state.pixelSortMode ?? 'brightness'}
+              onChange={v => set({ pixelSortMode: v as typeof state.pixelSortMode })}
+            />
+          </EffectSection>
+
+          {/* Riso Print */}
+          <EffectSection label="Riso Print" number={12} enabled={state.risoEnabled}
+            onToggle={v => set({ risoEnabled: v })}>
+            <Row label="Ink 1">
+              <ColorSwatch value={state.risoColor1} onChange={v => set({ risoColor1: v })} />
+            </Row>
+            <Row label="Ink 2">
+              <ColorSwatch value={state.risoColor2} onChange={v => set({ risoColor2: v })} />
+            </Row>
+            <Row label="Dot size">
+              <HwSlider value={state.risoScale} min={1} max={16}
+                onChange={v => set({ risoScale: v })} />
+            </Row>
+            <Row label="Misreg.">
+              {/* Misregistration — how far the two ink layers are offset from
+                  each other, mimicking imperfect real riso master alignment */}
+              <HwSlider value={state.risoOffset} min={0} max={10}
+                onChange={v => set({ risoOffset: v })} />
+            </Row>
+            <Row label="Grain">
+              <HwSlider value={state.risoGrain} min={0} max={100}
+                onChange={v => set({ risoGrain: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Two ink plates, each independently dithered and slightly offset — the imperfect-registration look of real Risograph duplicator prints.
+            </p>
+          </EffectSection>
+
+          {/* CMYK Separation */}
+          <EffectSection label="CMYK Separation" number={13} enabled={state.cmykSeparationEnabled}
+            onToggle={v => set({ cmykSeparationEnabled: v })}>
+            <Row label="Dot size">
+              <HwSlider value={state.cmykDotSize} min={1} max={12} step={0.5} decimals={1}
+                onChange={v => set({ cmykDotSize: v })} />
+            </Row>
+            <Row label="Spacing">
+              <HwSlider value={state.cmykSpacing} min={3} max={30} step={0.5} decimals={1}
+                onChange={v => set({ cmykSpacing: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Four halftone ink plates at the classic press screen angles (C 15° · M 75° · Y 0° · K 45°) — staggered to avoid moiré, exactly like an offset-press separation.
+            </p>
+          </EffectSection>
+
+        </HardwarePanel>
+
+        {/* ── Light & FX ─────────────────────────────────────────────────── */}
+        <HardwarePanel label="Light & FX" number={8}>
+          <Row label="Ambient">
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <HwSlider value={Math.round(state.ambientLightIntensity * 100)} min={0} max={100}
+                onChange={v => set({ ambientLightIntensity: v / 100 })} />
+              {/* hideHex — full swatch+hex text would crush the slider into a sliver */}
+              <ColorSwatch value={state.ambientLightColor} onChange={v => set({ ambientLightColor: v })} size={20} hideHex />
+            </div>
+          </Row>
+          {state.ambientLightIntensity > 0 && (
+            <Row label="Position">
+              <AmbientPicker />
+            </Row>
+          )}
+          <Row label="RGB Shift">
+            <HwSlider value={state.chromaticAberration} min={0} max={50}
+              onChange={v => set({ chromaticAberration: v })} />
+          </Row>
+          <div>
+            <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Dither</p>
+            <PatternGrid
+              options={[
+                { id:'none',label:'Off' },{ id:'bayer',label:'Bayer' },
+                { id:'floyd-steinberg',label:'F-S' },{ id:'atkinson',label:'Atkinson' },
+                { id:'ascii',label:'ASCII' },
+              ]}
+              value={state.ditherStyle}
+              onChange={v => set({ ditherStyle: v as DitherStyle })}
+              columns={5}
+              compact
+            />
           </div>
-        </Block>
-      )}
+          {state.ditherStyle !== 'none' && (
+            <>
+              {state.ditherStyle === 'ascii' ? (
+                <>
+                  <Row label="Char size">
+                    {/* Dedicated control, not the shared dot/cell Scale — needs a
+                        larger default range so characters read as glyphs rather
+                        than blur into static at very small sizes. */}
+                    <HwSlider value={state.ditherAsciiCharSize} min={6} max={32}
+                      onChange={v => set({ ditherAsciiCharSize: v })} />
+                  </Row>
+                  <Row label="Brightness">
+                    {/* Biases luminance before the density-ramp lookup — pulls
+                        shadow-heavy images up out of the ramp's near-empty bottom
+                        steps so they don't collapse into a flat black void. */}
+                    <HwSlider value={state.ditherAsciiBrightness} min={-100} max={100}
+                      onChange={v => set({ ditherAsciiBrightness: v })} />
+                  </Row>
+                </>
+              ) : (
+                <>
+                  <Row label="Scale">
+                    {/* Widened 8 → 16: bigger dot/cell size for chunkier, more
+                        graphic halftone patterns — matches large-dot reference looks. */}
+                    <HwSlider value={state.ditherScale} min={1} max={16}
+                      onChange={v => set({ ditherScale: v })} />
+                  </Row>
+                  {state.ditherStyle === 'bayer' && (
+                    <div>
+                      {/* Matrix size only affects Bayer — F-S/Atkinson use error
+                          diffusion, no fixed threshold grid to resize. Bigger
+                          matrix = finer/more photographic pattern; 2×2 = very
+                          coarse, graphic dot grid like image 1's sky reference. */}
+                      <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Matrix</p>
+                      <PatternGrid
+                        options={[
+                          { id:'2',label:'2×2' },{ id:'4',label:'4×4' },
+                          { id:'8',label:'8×8' },{ id:'16',label:'16×16' },
+                        ]}
+                        value={String(state.ditherMatrixSize)}
+                        onChange={v => set({ ditherMatrixSize: parseInt(v, 10) })}
+                        columns={4}
+                        compact
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+              <Row label="Duotone">
+                <TactileToggle value={state.ditherDuotoneEnabled}
+                  onChange={v => set({ ditherDuotoneEnabled: v })} />
+              </Row>
+              {state.ditherDuotoneEnabled && (
+                <>
+                  <Row label="Shadows">
+                    <ColorSwatch value={state.ditherDuotoneShadowColor}
+                      onChange={v => set({ ditherDuotoneShadowColor: v })} />
+                  </Row>
+                  <Row label="Highlights">
+                    <ColorSwatch value={state.ditherDuotoneHighlightColor}
+                      onChange={v => set({ ditherDuotoneHighlightColor: v })} />
+                  </Row>
+                  {/* Levels only affects the dot/error-diffusion dither styles —
+                      ASCII already has 10 built-in density steps in its ramp */}
+                  {state.ditherStyle !== 'ascii' && (
+                    <Row label="Levels">
+                      <HwSlider value={state.ditherDuotoneLevels} min={2} max={8}
+                        onChange={v => set({ ditherDuotoneLevels: v })} />
+                    </Row>
+                  )}
+                  <Row label="Invert">
+                    <TactileToggle value={state.ditherDuotoneInvert}
+                      onChange={v => set({ ditherDuotoneInvert: v })} />
+                  </Row>
+                  <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                    {state.ditherStyle === 'ascii'
+                      ? 'Characters draw in the highlight color over a flat background — the poster / terminal-art look. Invert swaps which color is background vs ink.'
+                      : 'Dot/error-diffusion density creates apparent tone from two flat colors — the halftone screen-print look. Invert swaps which color falls on shadows vs highlights.'}
+                  </p>
+                </>
+              )}
+              {state.ditherStyle === 'ascii' && !state.ditherDuotoneEnabled && (
+                <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                  Each character is colorized from the source image — full-color ASCII mosaic on black. Enable Duotone for a clean two-color poster look instead.
+                </p>
+              )}
+            </>
+          )}
+        </HardwarePanel>
 
-      <Row label="RGB Shift">
-        <Slider value={state.chromaticAberration} min={0} max={50} step={1} decimals={0}
-          onChange={v => set({ chromaticAberration: v })} />
-      </Row>
+        {/* ── Effect Mask ────────────────────────────────────────────────── */}
+        {hasSource && (
+          <HardwarePanel label="Effect Mask" number={9} active={state.effectMaskEnabled}>
+            <Row label="Enable">
+              <TactileToggle value={state.effectMaskEnabled} onChange={v => set({ effectMaskEnabled: v })} />
+            </Row>
+            {state.effectMaskEnabled && (
+              <>
+                <EffectMaskPad
+                  imageUrl={state.imageUrl}
+                  strokes={state.effectMaskStrokes}
+                  onChange={strokes => set({ effectMaskStrokes: strokes })}
+                  brushSize={state.effectMaskBrushSize}
+                  onBrushSizeChange={v => set({ effectMaskBrushSize: v })}
+                  feather={state.effectMaskFeather}
+                  onFeatherChange={v => set({ effectMaskFeather: v })}
+                  invert={state.effectMaskInvert}
+                  onInvertChange={v => set({ effectMaskInvert: v })}
+                  showOverlay={state.effectMaskShowOverlay}
+                  onShowOverlayChange={v => set({ effectMaskShowOverlay: v })}
+                  accentColor={T.accent}
+                />
+                <Row label="Brush size">
+                  <HwSlider value={Math.round(state.effectMaskBrushSize * 100)} min={2} max={40}
+                    onChange={v => set({ effectMaskBrushSize: v / 100 })} />
+                </Row>
+                <Row label="Feather">
+                  <HwSlider value={state.effectMaskFeather} min={0} max={100}
+                    onChange={v => set({ effectMaskFeather: v })} />
+                </Row>
+                <Row label="Show paint">
+                  <TactileToggle value={state.effectMaskShowOverlay} onChange={v => set({ effectMaskShowOverlay: v })} />
+                </Row>
+                <Row label="Invert">
+                  <TactileToggle value={state.effectMaskInvert} onChange={v => set({ effectMaskInvert: v })} />
+                </Row>
+                <button onClick={() => set({ effectMaskStrokes: [] })}
+                  disabled={state.effectMaskStrokes.length === 0}
+                  className="w-full py-2 text-[11px] font-medium rounded-lg border transition-all disabled:opacity-40"
+                  style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+                  Clear Mask
+                </button>
+                <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                  Restricts every active effect above to the painted area — everywhere else stays as the original image. Invert to restrict effects to everywhere <em>except</em> what you paint.
+                </p>
+              </>
+            )}
+          </HardwarePanel>
+        )}
 
-      <Block label="Dither">
-        <div className="grid grid-cols-4 gap-1.5">
-          {([
-            { id: 'none',            label: 'Off'      },
-            { id: 'bayer',           label: 'Bayer'    },
-            { id: 'floyd-steinberg', label: 'F-S'      },
-            { id: 'atkinson',        label: 'Atkinson' },
-          ] as const).map(d => (
-            <Chip key={d.id} label={d.label}
-              active={state.ditherStyle === d.id}
-              onClick={() => set({ ditherStyle: d.id })} />
-          ))}
-        </div>
-      </Block>
-      {state.ditherStyle !== 'none' && (
-        <Row label="Scale">
-          <Slider value={state.ditherScale} min={1} max={8} onChange={v => set({ ditherScale: v })} />
-        </Row>
-      )}
+      </div>
 
-      <div className="h-10 shrink-0" />
+      {/* Hardware serial plate — non-functional, purely decorative.
+          References the fastener plate on the back of a Braun or TE device,
+          stamped with a serial number and revision. Uses the LCD mono font
+          for consistency with the numeric readouts elsewhere in the panel.   */}
+      <div className="shrink-0 px-5 pt-2 pb-6 flex items-center justify-between select-none">
+        <span
+          style={{
+            fontFamily: '"Share Tech Mono", ui-monospace, monospace',
+            fontSize: 9, color: T.border, letterSpacing: '0.06em',
+          }}
+        >
+          SN · HK-2025-001
+        </span>
+        <span
+          style={{
+            fontFamily: '"Share Tech Mono", ui-monospace, monospace',
+            fontSize: 9, color: T.border, letterSpacing: '0.06em',
+          }}
+        >
+          REV. 1.0
+        </span>
+      </div>
     </div>
   );
 };

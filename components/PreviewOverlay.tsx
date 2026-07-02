@@ -2,11 +2,22 @@
 import React from 'react';
 
 export type PreviewLayout = 'left' | 'center' | 'right';
+export type PreviewFont = 'sans' | 'serif';
 
-interface Props { layout: PreviewLayout }
+interface Props { layout: PreviewLayout; font?: PreviewFont }
+
+// Applied only to the headline — nav/buttons stay sans, matching how real
+// designs pair a serif display headline with sans UI chrome rather than
+// switching the whole mock over.
+const headlineFont = (font: PreviewFont) =>
+  font === 'serif' ? { fontFamily: '"Playfair Display", serif' } : {};
 
 const Nav = () => (
-  <div className="absolute top-0 inset-x-0 flex items-center justify-between px-8 py-6 z-10">
+  // px-[8%] matches the headline content blocks' inset (see Left/Right layouts
+  // below) — keeps logo and CTA aligned with the main title, and pulls them in
+  // from the raw edge so they don't collide with the app's fixed corner UI
+  // (Eye / Fullscreen icon buttons sit at that same top-right corner).
+  <div className="absolute top-0 inset-x-0 flex items-center justify-between px-[8%] py-6 z-10">
     <div className="flex items-center gap-2.5">
       <div className="w-6 h-6 rounded-full border-[1.5px] border-white/70" />
       <span className="text-white text-sm font-semibold tracking-widest uppercase opacity-90">Brand</span>
@@ -24,7 +35,7 @@ const Nav = () => (
 
 // ── Left ──────────────────────────────────────────────────────────────────────
 
-const LeftLayout = () => (
+const LeftLayout: React.FC<{ font: PreviewFont }> = ({ font }) => (
   <div className="absolute inset-0 flex flex-col pointer-events-none select-none">
     <Nav />
     <div className="flex-1 flex flex-col justify-center px-[8%] gap-6 max-w-[55%]">
@@ -33,7 +44,7 @@ const LeftLayout = () => (
       </p>
       <h1
         className="text-[clamp(2.8rem,5.5vw,5.5rem)] font-semibold text-white leading-[1.05] tracking-tight"
-        style={{ textShadow: '0 4px 40px rgba(0,0,0,0.5)' }}
+        style={{ textShadow: '0 4px 40px rgba(0,0,0,0.5)', ...headlineFont(font) }}
       >
         Design that<br />drives results.
       </h1>
@@ -54,7 +65,7 @@ const LeftLayout = () => (
 
 // ── Centre ────────────────────────────────────────────────────────────────────
 
-const CenterLayout = () => (
+const CenterLayout: React.FC<{ font: PreviewFont }> = ({ font }) => (
   <div className="absolute inset-0 flex flex-col pointer-events-none select-none">
     <Nav />
     <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-6">
@@ -63,7 +74,7 @@ const CenterLayout = () => (
       </span>
       <h1
         className="text-[clamp(3rem,7vw,6rem)] font-semibold text-white leading-[1.04] tracking-tight max-w-4xl"
-        style={{ textShadow: '0 4px 32px rgba(0,0,0,0.4)' }}
+        style={{ textShadow: '0 4px 32px rgba(0,0,0,0.4)', ...headlineFont(font) }}
       >
         Ideas that move<br />the world forward.
       </h1>
@@ -84,7 +95,7 @@ const CenterLayout = () => (
 
 // ── Right ─────────────────────────────────────────────────────────────────────
 
-const RightLayout = () => (
+const RightLayout: React.FC<{ font: PreviewFont }> = ({ font }) => (
   <div className="absolute inset-0 flex flex-col pointer-events-none select-none">
     <Nav />
     <div className="flex-1 flex flex-col justify-center items-end px-[8%] gap-6 ml-auto max-w-[55%] text-right">
@@ -93,7 +104,7 @@ const RightLayout = () => (
       </p>
       <h1
         className="text-[clamp(2.8rem,5.5vw,5.5rem)] font-semibold text-white leading-[1.05] tracking-tight"
-        style={{ textShadow: '0 4px 40px rgba(0,0,0,0.5)' }}
+        style={{ textShadow: '0 4px 40px rgba(0,0,0,0.5)', ...headlineFont(font) }}
       >
         Your brand.<br />Beautifully built.
       </h1>
@@ -101,11 +112,11 @@ const RightLayout = () => (
         Premium digital experiences for forward-thinking teams who refuse to settle.
       </p>
       <div className="flex items-center gap-5 mt-1 justify-end">
-        <button className="text-white/80 font-semibold text-sm underline underline-offset-4 decoration-white/30">
-          ← See Our Work
-        </button>
         <button className="px-6 py-3 rounded-lg bg-white text-black font-semibold text-sm shadow-lg">
           Get Started
+        </button>
+        <button className="text-white/80 font-semibold text-sm underline underline-offset-4 decoration-white/30">
+          See Our Work →
         </button>
       </div>
     </div>
@@ -114,10 +125,10 @@ const RightLayout = () => (
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
-const PreviewOverlay: React.FC<Props> = ({ layout }) => {
-  if (layout === 'left')   return <LeftLayout />;
-  if (layout === 'center') return <CenterLayout />;
-  if (layout === 'right')  return <RightLayout />;
+const PreviewOverlay: React.FC<Props> = ({ layout, font = 'sans' }) => {
+  if (layout === 'left')   return <LeftLayout font={font} />;
+  if (layout === 'center') return <CenterLayout font={font} />;
+  if (layout === 'right')  return <RightLayout font={font} />;
   return null;
 };
 

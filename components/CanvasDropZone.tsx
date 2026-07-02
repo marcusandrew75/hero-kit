@@ -66,24 +66,24 @@ const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
     >
       {/* Subtle drag highlight ring */}
       {dragging && (
-        <div className="absolute inset-6 rounded-2xl border-2 border-dashed border-white/30 pointer-events-none" />
+        <div className="absolute inset-6 rounded-2xl border-2 border-dashed border-black/20 pointer-events-none" />
       )}
 
       {/* Icon */}
-      <div className={`transition-all duration-200 ${dragging ? 'scale-110 opacity-60' : 'opacity-30'}`}>
+      <div className={`transition-all duration-200 ${dragging ? 'scale-110 opacity-50' : 'opacity-20'}`}>
         <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="8" y="12" width="56" height="48" rx="6" stroke="white" strokeWidth="2.5"/>
-          <circle cx="24" cy="28" r="5" stroke="white" strokeWidth="2.5"/>
-          <path d="M8 50 L22 36 L34 46 L46 34 L64 50" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="8" y="12" width="56" height="48" rx="6" stroke="#1a1917" strokeWidth="2.5"/>
+          <circle cx="24" cy="28" r="5" stroke="#1a1917" strokeWidth="2.5"/>
+          <path d="M8 50 L22 36 L34 46 L46 34 L64 50" stroke="#1a1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </div>
 
       {/* Instructions */}
       <div className="text-center space-y-2 pointer-events-none">
-        <p className="text-white/70 text-xl font-medium tracking-tight">
+        <p className="text-[#1a1917]/60 text-xl font-medium tracking-tight">
           {dragging ? 'Drop to load' : 'Drop an image here'}
         </p>
-        <p className="text-white/35 text-sm">
+        <p className="text-[#6b6860] text-sm">
           or click to browse / paste from clipboard
         </p>
       </div>
@@ -91,7 +91,7 @@ const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
       {/* Inspire Me */}
       <button
         onClick={e => { e.stopPropagation(); handleDemo(); }}
-        className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-white/15 text-white/60 text-sm font-medium hover:text-white hover:border-white/35 hover:bg-white/5 transition-all"
+        className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-black/12 text-[#6b6860] text-sm font-medium hover:text-[#1a1917] hover:border-black/25 hover:bg-black/4 transition-all"
       >
         <i className="ph ph-sparkle text-base" />
         Show me what's possible

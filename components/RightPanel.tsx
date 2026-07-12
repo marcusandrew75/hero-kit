@@ -5,13 +5,14 @@ import { toPng, toJpeg } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
 import EffectMaskPad from './EffectMaskPad';
 import DocsPanel from './DocsPanel';
+import { generateBackground } from '../services/generate';
 import {
   HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T,
 } from './ui/HardwareControls';
 import {
   BackgroundState, PatternStyle, ImageFilter, ImageMask,
   DitherStyle, ExportFormat, ExportResolution,
-  AmbientPosition, ImageLayer, LayerBlendMode,
+  AmbientPosition, ImageLayer, LayerBlendMode, AtmosphereStyle,
 } from '../types';
 
 // ─── Local primitives ────────────────────────────────────────────────────────
@@ -639,6 +640,245 @@ const PATTERNS: { id: PatternStyle; label: string }[] = [
   { id: 'scanline', label: 'Scan' }, { id: 'hex', label: 'Hex' },
   { id: 'waves', label: 'Waves' }, { id: 'plus', label: 'Plus' },
 ];
+// Doesn't require a source image — atmosphere renders on its own as a
+// standalone animated background, or layered behind/around an uploaded photo.
+const ATMOSPHERES: { id: AtmosphereStyle; label: string }[] = [
+  { id: 'none', label: 'None' },
+  // Paper Shaders — GPU canvases, genuinely animated
+  { id: 'warp', label: 'Warp' }, { id: 'voronoi', label: 'Voronoi' },
+  { id: 'metaballs', label: 'Metaballs' }, { id: 'pulsing-border', label: 'Pulsing Border' },
+  { id: 'god-rays', label: 'God Rays' }, { id: 'smoke-ring', label: 'Smoke Ring' },
+  // Hand-rolled WebGL
+  { id: 'fluid-mesh', label: 'Fluid Mesh' }, { id: 'volumetric-fog', label: 'Fog' },
+  { id: 'molten-orb', label: 'Molten Orb' }, { id: 'kinetic-flow', label: 'Kinetic Flow' },
+  { id: 'generative', label: 'Generative' },
+  // CSS-based
+  { id: 'aurora', label: 'Aurora' }, { id: 'light-leak', label: 'Light Leak' },
+  { id: 'shimmer', label: 'Shimmer' }, { id: 'glitch', label: 'Glitch' },
+  { id: 'glow', label: 'Glow' }, { id: 'mesh-accent', label: 'Mesh Accent' },
+  { id: 'animated-mesh', label: 'Spin Mesh' }, { id: 'fade-bottom', label: 'Fade' },
+];
+
+// ─── Video export ─────────────────────────────────────────────────────────────
+// Recovered and generalized from git history (c1ffafe~1) — HeroKit had this at
+// v1.0, hidden while the effects pipeline matured, later deleted in the v2.0
+// rewrite. Same core technique: composite every visible layer onto one canvas
+// per frame and record it with MediaRecorder. The one line that matters most —
+// `container.querySelectorAll('canvas')` — sweeps up every WebGL/canvas atmosphere
+// effect (including new Paper Shaders ones) automatically, no per-effect plumbing.
+//
+// Generalized beyond "only when a video is loaded": the frame source is now
+// whichever of <video>/<img> is actually present (or neither, for an
+// atmosphere-only background) — previously this hard-required an uploaded video.
+
+// Atmosphere styles that render an actual animated <canvas> — worth recording.
+// The CSS-only ones (aurora, glow, shimmer, etc.) don't produce a canvas the
+// compositor can pick up, so a video of those would just be a static frame.
+const ANIMATED_ATMOSPHERES = new Set<AtmosphereStyle>([
+  'fluid-mesh', 'volumetric-fog', 'molten-orb', 'kinetic-flow', 'generative',
+  'warp', 'voronoi', 'metaballs', 'pulsing-border', 'god-rays', 'smoke-ring',
+]);
+
+const VideoExportSection: React.FC<{ state: BackgroundState }> = ({ state }) => {
+  const [format, setFormat]         = useState<'mp4' | 'webm'>('mp4');
+  const [duration, setDuration]     = useState(5);
+  const [pixelRatio, setPixelRatio] = useState<1 | 2 | 4>(2);
+  const [speed, setSpeed]           = useState<0.5 | 1>(1);
+  const [exporting, setExporting]   = useState(false);
+  const [progress, setProgress]     = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const rafRef      = useRef<number>(0);
+
+  const canExport = !!state.videoUrl || ANIMATED_ATMOSPHERES.has(state.atmosphereStyle);
+
+  const exportVideo = async (forceWebm = false) => {
+    const container = document.getElementById('heroken-canvas') as HTMLElement | null;
+    if (!container) return;
+    const vid   = container.querySelector('video') as HTMLVideoElement | null;
+    const imgEl = !vid ? (container.querySelector('img') as HTMLImageElement | null) : null;
+
+    const w = container.clientWidth  * pixelRatio;
+    const h = container.clientHeight * pixelRatio;
+
+    if (vid) {
+      vid.playbackRate = speed;
+      if (vid.paused) {
+        await new Promise<void>(res => {
+          vid.addEventListener('playing', () => res(), { once: true });
+          vid.play().catch(() => res());
+          setTimeout(res, 800);
+        });
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    const rec = document.createElement('canvas');
+    rec.width = w; rec.height = h;
+    const ctx = rec.getContext('2d')!;
+
+    const GW = Math.min(512, w), GH = Math.min(512, h);
+    const gCanvas = document.createElement('canvas');
+    gCanvas.width = GW; gCanvas.height = GH;
+    const gCtx = gCanvas.getContext('2d')!;
+    const gImg = gCtx.createImageData(GW, GH);
+    const nhex = (state.noiseColor || '#ffffff').replace('#', '');
+    const nr = parseInt(nhex.slice(0, 2), 16) || 255;
+    const ng = parseInt(nhex.slice(2, 4), 16) || 255;
+    const nb = parseInt(nhex.slice(4, 6), 16) || 255;
+
+    const refreshGrain = () => {
+      for (let i = 0; i < gImg.data.length; i += 4) {
+        const v = Math.random() > 0.65 ? ((Math.random() - 0.65) / 0.35) * 255 : 0;
+        gImg.data[i] = nr; gImg.data[i+1] = ng; gImg.data[i+2] = nb; gImg.data[i+3] = v | 0;
+      }
+      gCtx.putImageData(gImg, 0, 0);
+    };
+    refreshGrain();
+
+    // Chrome's MediaRecorder.isTypeSupported('video/mp4') can report true
+    // while actually producing a silent 0-byte recording (nominal codec
+    // support without a working muxer) — more specific codec strings are
+    // checked more accurately, and the empty-blob check in onstop below is
+    // the real safety net regardless of what isTypeSupported claims.
+    const candidates = format === 'mp4' && !forceWebm
+      ? ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=h264', 'video/mp4',
+         'video/webm;codecs=vp9', 'video/webm']
+      : ['video/webm;codecs=vp9', 'video/webm'];
+    const mimeType = candidates.find(m => MediaRecorder.isTypeSupported(m)) ?? 'video/webm';
+
+    const stream   = rec.captureStream(30);
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 * pixelRatio });
+    recorderRef.current = recorder;
+    const chunks: Blob[] = [];
+
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+      if (vid) vid.playbackRate = 1;
+      const blob = new Blob(chunks, { type: mimeType });
+
+      // Recorded mp4 came back empty — this browser's mp4 support was a
+      // false positive. Silently retry once as webm rather than handing
+      // the user a broken 0-byte file.
+      if (blob.size === 0 && !forceWebm) {
+        exportVideo(true);
+        return;
+      }
+      if (blob.size === 0) {
+        alert('Video export failed — try a lower resolution or a shorter duration.');
+        setExporting(false); setProgress(0);
+        return;
+      }
+
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const url = URL.createObjectURL(blob);
+      const a   = document.createElement('a');
+      a.download = `herokit-background.${ext}`;
+      a.href = url; a.click();
+      URL.revokeObjectURL(url);
+      setExporting(false); setProgress(0);
+    };
+
+    setExporting(true);
+    recorder.start(100);
+    const t0 = performance.now();
+    const total = duration * 1000;
+    let grainTick = 0;
+
+    const render = () => {
+      const elapsed = performance.now() - t0;
+      if (elapsed >= total) { recorder.stop(); return; }
+      setProgress((elapsed / total) * 100);
+
+      ctx.fillStyle = state.bgColor || '#f2f0eb';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.globalAlpha = state.imageOpacity ?? 1;
+      if (vid)        { try { ctx.drawImage(vid, 0, 0, w, h); } catch {} }
+      else if (imgEl) { try { ctx.drawImage(imgEl, 0, 0, w, h); } catch {} }
+      ctx.globalAlpha = 1;
+
+      if ((state.overlayOpacity ?? 0) > 0) {
+        ctx.fillStyle = `rgba(0,0,0,${state.overlayOpacity})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // Sweeps every <canvas> currently in the DOM — atmosphere shaders
+      // (hand-rolled WebGL and Paper Shaders alike), the processed-image
+      // effects canvas, and the film grain canvas all land here for free.
+      container.querySelectorAll<HTMLCanvasElement>('canvas').forEach(c => {
+        try { ctx.drawImage(c, 0, 0, w, h); } catch {}
+      });
+
+      if ((state.noiseOpacity ?? 0) > 0) {
+        if (grainTick++ % 2 === 0) refreshGrain();
+        ctx.globalAlpha = state.noiseOpacity;
+        ctx.drawImage(gCanvas, 0, 0, w, h);
+        ctx.globalAlpha = 1;
+      }
+
+      if ((state.vignetteStrength ?? 0) > 0) {
+        const vg = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.65);
+        vg.addColorStop(0.3, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, `rgba(0,0,0,${state.vignetteStrength})`);
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      rafRef.current = requestAnimationFrame(render);
+    };
+    render();
+  };
+
+  const cancel = () => {
+    recorderRef.current?.stop();
+    cancelAnimationFrame(rafRef.current);
+    const vid = document.querySelector('#heroken-canvas video') as HTMLVideoElement | null;
+    if (vid) vid.playbackRate = 1;
+    setExporting(false); setProgress(0);
+  };
+
+  return (
+    <>
+      <HwSegment options={[{ id:'mp4',label:'MP4' },{ id:'webm',label:'WebM' }]}
+        value={format} onChange={v => setFormat(v as 'mp4'|'webm')} />
+      <Row label="Duration">
+        <HwSegment options={[{ id:'3',label:'3s' },{ id:'5',label:'5s' },{ id:'10',label:'10s' },{ id:'15',label:'15s' }]}
+          value={String(duration)} onChange={v => setDuration(Number(v))} />
+      </Row>
+      <Row label="Speed">
+        <HwSegment options={[{ id:'0.5',label:'0.5×' },{ id:'1',label:'1×' }]}
+          value={String(speed)} onChange={v => setSpeed(Number(v) as 0.5 | 1)} />
+      </Row>
+      <Row label="Resolution">
+        <HwSegment options={[{ id:'1',label:'1×' },{ id:'2',label:'2×' },{ id:'4',label:'4×' }]}
+          value={String(pixelRatio)} onChange={v => setPixelRatio(Number(v) as 1 | 2 | 4)} />
+      </Row>
+      {exporting ? (
+        <div className="flex flex-col gap-2">
+          <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: T.panel }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: T.accent }} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px]" style={{ color: T.muted }}>
+              Exporting… {(progress * duration / 100).toFixed(1)}s / {duration}s
+            </span>
+            <button onClick={cancel} className="text-[10px] font-medium" style={{ color: T.muted }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="hw-cta-mount">
+          <button onClick={() => exportVideo()} disabled={!canExport} className="hw-cta">
+            <i className="ph-bold ph-download-simple text-base" /> Export Video
+          </button>
+        </div>
+      )}
+      <p className="text-[9px] leading-relaxed" style={{ color: T.dim }}>
+        Bakes atmosphere, grain, vignette &amp; overlay into every frame. Enabled when an animated
+        atmosphere effect or a video source is active.
+      </p>
+    </>
+  );
+};
 
 // ─── RightPanel ──────────────────────────────────────────────────────────────
 
@@ -654,7 +894,25 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
   const [showDocs, setShowDocs]   = useState(false);
+  const [sourceMode, setSourceMode] = useState<'upload' | 'generate'>('upload');
+  const [genPrompt, setGenPrompt] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError]   = useState<string | null>(null);
   const set = (patch: Partial<BackgroundState>) => onChange(patch);
+
+  const handleGenerate = async () => {
+    if (!genPrompt.trim() || generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const imageUrl = await generateBackground(genPrompt.trim());
+      set({ imageUrl, videoUrl: undefined });
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : 'Generation failed.');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleFile = (file: File) => {
     if (file.type.startsWith('image/')) {
@@ -778,21 +1036,62 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </Row>
         </HardwarePanel>
 
+        {/* ── Video Export — hidden for now, parked for a later build ─────── */}
+        {false && (
+          <HardwarePanel label="Video Export">
+            <VideoExportSection state={state} />
+          </HardwarePanel>
+        )}
+
         {/* ── Source ─────────────────────────────────────────────────────── */}
         <HardwarePanel label="Source" number={2}>
-          <label
-            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-            onDragOver={e => e.preventDefault()}
-            className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
-            style={{ borderColor: T.border, color: T.muted }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = T.text}
-            onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
-          >
-            <i className="ph ph-upload-simple text-xl" />
-            <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
-            <input type="file" className="hidden" accept="image/*"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-          </label>
+          {/* Upload/Generate toggle hidden for now — Generate uses a paid,
+              per-call Replicate API and shouldn't be reachable on the free
+              public tool until it's gated (rate limit / paywall). Logic and
+              UI both kept intact behind sourceMode, just not switchable. */}
+          {false && (
+            <HwSegment
+              options={[{ id:'upload',label:'Upload' },{ id:'generate',label:'Generate' }]}
+              value={sourceMode} onChange={v => setSourceMode(v as 'upload' | 'generate')}
+            />
+          )}
+          {sourceMode === 'upload' ? (
+            <label
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+              onDragOver={e => e.preventDefault()}
+              className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
+              style={{ borderColor: T.border, color: T.muted }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = T.text}
+              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
+            >
+              <i className="ph ph-upload-simple text-xl" />
+              <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
+              <input type="file" className="hidden" accept="image/*"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+            </label>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={genPrompt}
+                onChange={e => setGenPrompt(e.target.value)}
+                placeholder="Describe a background — e.g. 'foggy pine forest at dawn, muted teal light'"
+                rows={3}
+                maxLength={500}
+                className="w-full rounded-xl border px-3 py-2 text-[11px] leading-relaxed resize-none focus:outline-none"
+                style={{ borderColor: T.border, color: T.text, background: T.surface }}
+              />
+              <div className="hw-cta-mount">
+                <button onClick={handleGenerate} disabled={generating || !genPrompt.trim()} className="hw-cta">
+                  {generating
+                    ? <><i className="ph ph-spinner animate-spin text-base" /> Generating…</>
+                    : <><i className="ph-bold ph-magic-wand text-base" /> Generate</>}
+                </button>
+              </div>
+              {genError && (
+                <p className="text-[10px] font-medium leading-relaxed" style={{ color: T.accent }}>{genError}</p>
+              )}
+            </div>
+          )}
           {hasSource && (
             <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
               className="w-full py-2 text-[11px] font-medium rounded-lg border transition-all"
@@ -843,39 +1142,80 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </HardwarePanel>
         )}
 
-        {/* ── Background — only shown when an image is loaded ────────────── */}
-        {hasSource && (
+        {/* ── Background — hidden for now, parked for a later build ───────── */}
+        {false && (
           <HardwarePanel label="Background" number={5}>
-            <div>
-              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Filter</p>
-              <PatternGrid options={FILTERS} value={state.imageFilter}
-                onChange={v => set({ imageFilter: v as ImageFilter })} columns={3} />
-            </div>
-            {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
-              <Row label="Tint color">
-                <ColorSwatch value={state.tintColor} onChange={v => set({ tintColor: v })} />
-              </Row>
+            {/* Filter/Blur/Mask only make sense once there's a photo to act on.
+                Atmosphere below has no such requirement — it's a standalone
+                animated background as much as it is a layer behind a photo. */}
+            {hasSource && (
+              <>
+                <div>
+                  <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Filter</p>
+                  <PatternGrid options={FILTERS} value={state.imageFilter}
+                    onChange={v => set({ imageFilter: v as ImageFilter })} columns={3} />
+                </div>
+                {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
+                  <Row label="Tint color">
+                    <ColorSwatch value={state.tintColor} onChange={v => set({ tintColor: v })} />
+                  </Row>
+                )}
+                <Row label="Blur">
+                  <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
+                    onChange={v => set({ imageBlur: v })} />
+                </Row>
+                <Row label="Opacity">
+                  <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
+                    onChange={v => set({ imageOpacity: v / 100 })} />
+                </Row>
+                <div>
+                  <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Mask</p>
+                  <PatternGrid options={MASKS} value={state.imageMask}
+                    onChange={v => set({ imageMask: v as ImageMask })} columns={3} />
+                </div>
+                {/* Only shown when a mask is active — this is the color the fade
+                    reveals underneath. Contextual rather than a permanent row, since
+                    it's irrelevant the rest of the time. */}
+                {state.imageMask !== 'none' && (
+                  <Row label="Mask color">
+                    <ColorSwatch value={state.maskColor} onChange={v => set({ maskColor: v })} />
+                  </Row>
+                )}
+                <div style={{ height: 1, background: T.border }} />
+              </>
             )}
-            <Row label="Blur">
-              <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
-                onChange={v => set({ imageBlur: v })} />
-            </Row>
-            <Row label="Opacity">
-              <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
-                onChange={v => set({ imageOpacity: v / 100 })} />
-            </Row>
             <div>
-              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Mask</p>
-              <PatternGrid options={MASKS} value={state.imageMask}
-                onChange={v => set({ imageMask: v as ImageMask })} columns={3} />
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Atmosphere</p>
+              <PatternGrid options={ATMOSPHERES} value={state.atmosphereStyle}
+                onChange={v => set({ atmosphereStyle: v as AtmosphereStyle })} columns={3} compact />
             </div>
-            {/* Only shown when a mask is active — this is the color the fade
-                reveals underneath. Contextual rather than a permanent row, since
-                it's irrelevant the rest of the time. */}
-            {state.imageMask !== 'none' && (
-              <Row label="Mask color">
-                <ColorSwatch value={state.maskColor} onChange={v => set({ maskColor: v })} />
-              </Row>
+            {state.atmosphereStyle !== 'none' && (
+              <>
+                <Row label="Color 1">
+                  <ColorSwatch value={state.meshColors.color1}
+                    onChange={v => set({ meshColors: { ...state.meshColors, color1: v } })} />
+                </Row>
+                <Row label="Color 2">
+                  <ColorSwatch value={state.meshColors.color2}
+                    onChange={v => set({ meshColors: { ...state.meshColors, color2: v } })} />
+                </Row>
+                <Row label="Color 3">
+                  <ColorSwatch value={state.meshColors.color3}
+                    onChange={v => set({ meshColors: { ...state.meshColors, color3: v } })} />
+                </Row>
+                <Row label="Speed">
+                  <HwSegment
+                    options={[{ id:'slow',label:'Slow' },{ id:'normal',label:'Normal' },{ id:'fast',label:'Fast' }]}
+                    value={state.meshSpeed} onChange={v => set({ meshSpeed: v as typeof state.meshSpeed })}
+                  />
+                </Row>
+                {/* Lets an atmosphere effect sit behind/blend with an uploaded
+                    photo instead of only working as a standalone background. */}
+                <Row label="Opacity">
+                  <HwSlider value={Math.round((state.effectsOpacity ?? 1) * 100)} min={0} max={100}
+                    onChange={v => set({ effectsOpacity: v / 100 })} />
+                </Row>
+              </>
             )}
           </HardwarePanel>
         )}

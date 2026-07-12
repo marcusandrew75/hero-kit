@@ -5,6 +5,7 @@ import RightPanel from './components/RightPanel';
 import PreviewOverlay, { PreviewLayout, PreviewFont } from './components/PreviewOverlay';
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
+import LandingPage from './components/LandingPage';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 
@@ -45,6 +46,14 @@ const saveHistoryEntry = (s: BackgroundState) => {
 };
 
 const App: React.FC = () => {
+  // Landing page is the front door at the bare URL; the tool lives at ?app
+  // ("Open HeroKit" CTAs set it without a reload, so the tool is directly
+  // linkable/bookmarkable). Shared Look links (#look=...) skip the landing
+  // entirely — someone opening a shared Look wants the tool, not a pitch.
+  const [showLanding, setShowLanding] = useState(() =>
+    !new URLSearchParams(window.location.search).has('app') &&
+    !window.location.hash.startsWith('#look='),
+  );
   const [state, setState]                 = useState<BackgroundState>(DEFAULT);
   const [showPreview, setShowPreview]     = useState(false);
   const [previewLayout, setPreviewLayout] = useState<PreviewLayout>('left');
@@ -130,6 +139,15 @@ const App: React.FC = () => {
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
+  if (showLanding) {
+    return (
+      <LandingPage onOpen={() => {
+        history.replaceState(null, '', `${window.location.pathname}?app`);
+        setShowLanding(false);
+      }} />
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f2f0eb]">
       {/* Canvas area */}
@@ -155,8 +173,14 @@ const App: React.FC = () => {
         >
           <Canvas state={state} hideEffects={hideEffects} />
 
-          {/* Drop zone — shown when no image/video loaded */}
-          {!hasSource && <CanvasDropZone onChange={handleChange} />}
+          {/* Drop zone — shown when no image/video loaded. Stays interactive
+              (drag/drop, click-to-browse) even when an atmosphere effect is
+              active on its own, but hides its big icon/text so the effect
+              is actually visible instead of being covered by an empty-state
+              placeholder that implies nothing is happening. */}
+          {!hasSource && (
+            <CanvasDropZone onChange={handleChange} minimal={state.atmosphereStyle !== 'none'} />
+          )}
 
           {/* Dim layer — preview only */}
           {showPreview && previewDim > 0 && (

@@ -4,6 +4,10 @@ import { BackgroundState } from '../types';
 
 interface Props {
   onChange: (patch: Partial<BackgroundState>) => void;
+  // True when an atmosphere effect is already rendering behind this overlay
+  // with no source image — the drop zone stays fully functional but hides
+  // its icon/text/CTA so the effect underneath isn't hidden.
+  minimal?: boolean;
 }
 
 // Single curated "HeroKit Demo" — image 029 + golden-hour grade + dispersion + spot blur
@@ -33,7 +37,7 @@ const DEMO: Partial<BackgroundState> = {
   channelSmearEnabled: false, warpEnabled: false, motionBlurEnabled: false,
 };
 
-const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
+const CanvasDropZone: React.FC<Props> = ({ onChange, minimal = false }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -69,33 +73,41 @@ const CanvasDropZone: React.FC<Props> = ({ onChange }) => {
         <div className="absolute inset-6 rounded-2xl border-2 border-dashed border-black/20 pointer-events-none" />
       )}
 
-      {/* Icon */}
-      <div className={`transition-all duration-200 ${dragging ? 'scale-110 opacity-50' : 'opacity-20'}`}>
-        <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="8" y="12" width="56" height="48" rx="6" stroke="#1a1917" strokeWidth="2.5"/>
-          <circle cx="24" cy="28" r="5" stroke="#1a1917" strokeWidth="2.5"/>
-          <path d="M8 50 L22 36 L34 46 L46 34 L64 50" stroke="#1a1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </div>
+      {/* Icon — hidden in minimal mode (atmosphere already filling the
+          canvas) unless actively dragging a file over it, so the effect
+          underneath stays fully visible the rest of the time. */}
+      {(!minimal || dragging) && (
+        <div className={`transition-all duration-200 ${dragging ? 'scale-110 opacity-50' : 'opacity-20'}`}>
+          <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="12" width="56" height="48" rx="6" stroke="#1a1917" strokeWidth="2.5"/>
+            <circle cx="24" cy="28" r="5" stroke="#1a1917" strokeWidth="2.5"/>
+            <path d="M8 50 L22 36 L34 46 L46 34 L64 50" stroke="#1a1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+      )}
 
       {/* Instructions */}
-      <div className="text-center space-y-2 pointer-events-none">
-        <p className="text-[#1a1917]/60 text-xl font-medium tracking-tight">
-          {dragging ? 'Drop to load' : 'Drop an image here'}
-        </p>
-        <p className="text-[#6b6860] text-sm">
-          or click to browse / paste from clipboard
-        </p>
-      </div>
+      {(!minimal || dragging) && (
+        <div className="text-center space-y-2 pointer-events-none">
+          <p className="text-[#1a1917]/60 text-xl font-medium tracking-tight">
+            {dragging ? 'Drop to load' : 'Drop an image here'}
+          </p>
+          <p className="text-[#6b6860] text-sm">
+            or click to browse / paste from clipboard
+          </p>
+        </div>
+      )}
 
       {/* Inspire Me */}
-      <button
-        onClick={e => { e.stopPropagation(); handleDemo(); }}
-        className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-black/12 text-[#6b6860] text-sm font-medium hover:text-[#1a1917] hover:border-black/25 hover:bg-black/4 transition-all"
-      >
-        <i className="ph ph-sparkle text-base" />
-        Show me what's possible
-      </button>
+      {!minimal && (
+        <button
+          onClick={e => { e.stopPropagation(); handleDemo(); }}
+          className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-black/12 text-[#6b6860] text-sm font-medium hover:text-[#1a1917] hover:border-black/25 hover:bg-black/4 transition-all"
+        >
+          <i className="ph ph-sparkle text-base" />
+          Show me what's possible
+        </button>
+      )}
 
       <input
         ref={inputRef}

@@ -13,7 +13,16 @@ export type AtmosphereStyle =
   | 'shimmer'
   | 'glitch'
   | 'glow'
-  | 'fade-bottom';
+  | 'fade-bottom'
+  // Paper Shaders (@paper-design/shaders-react) — GPU shader canvases, same
+  // z-[1] atmosphere layer as the effects above. Genuine <canvas> elements,
+  // which is what lets Video Export sweep them up automatically.
+  | 'warp'
+  | 'voronoi'
+  | 'metaballs'
+  | 'pulsing-border'
+  | 'god-rays'
+  | 'smoke-ring';
 
 export type PatternStyle = 'none' | 'grid' | 'dot' | 'iso-grid' | 'scanline' | 'hex' | 'waves' | 'plus';
 

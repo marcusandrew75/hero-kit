@@ -162,6 +162,18 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.0', date: '12 Jul 2026',
+    items: [
+      'Added: the HeroKit landing page — a proper front door at herokit.app introducing the tool: gallery of example outputs with full-size lightbox, the effects rack, workflow tour, Preview-in-Context and ratio-selector features, testimonials and the maker\'s plate. The app itself now lives at herokit.app/?app (shared Look links still jump straight into the tool)',
+    ],
+  },
+  {
+    version: '2.9', date: '3 Jul 2026',
+    items: [
+      'Hidden: the AI "Generate" background source (Replicate/Flux) — parked until it has a rate limit or paywall in front of it, since it\'s the first feature with a real per-use cost. Code kept intact behind the Source panel\'s upload/generate toggle',
+    ],
+  },
+  {
     version: '2.8', date: '2 Jul 2026',
     items: [
       'Added: Duotone mode for Halftone — flattens the photo to a background color plus a dot-ink color instead of multiply-blending one ink over the photo, for a flat two-color screen-print/poster look rather than a tinted photograph',

@@ -1,6 +1,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import { BackgroundState } from '../types';
+import { Warp, Voronoi, Metaballs, PulsingBorder, GodRays, SmokeRing } from '@paper-design/shaders-react';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,12 @@ const hexToRgb = (hex: string): [number, number, number] => {
   const bigint = parseInt(hex.replace('#', ''), 16);
   return [((bigint >> 16) & 255) / 255, ((bigint >> 8) & 255) / 255, (bigint & 255) / 255];
 };
+
+// Shared speed mapping — mirrors the multiplier scheme every hand-rolled
+// WebGL atmosphere effect already uses (FluidMeshGL etc.), so switching
+// between a hand-rolled shader and a Paper Shaders one feels consistent.
+const meshSpeedToNumber = (speed: 'slow' | 'normal' | 'fast'): number =>
+  speed === 'slow' ? 0.3 : speed === 'fast' ? 2 : 1;
 
 // ─── WebGL: Fluid Mesh ────────────────────────────────────────────────────────
 
@@ -2598,6 +2605,36 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
           )}
           {atmosphereStyle === 'fade-bottom' && (
             <div className="absolute inset-0 z-[1]" style={{ background: `linear-gradient(to top, ${meshColors.color1} 0%, transparent 100%)` }} />
+          )}
+          {atmosphereStyle === 'warp' && (
+            <Warp className="absolute inset-0 w-full h-full" fit="cover"
+              colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
+          )}
+          {atmosphereStyle === 'voronoi' && (
+            <Voronoi className="absolute inset-0 w-full h-full" fit="cover"
+              colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
+          )}
+          {atmosphereStyle === 'metaballs' && (
+            <Metaballs className="absolute inset-0 w-full h-full" fit="cover"
+              colorBack="transparent" colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
+          )}
+          {atmosphereStyle === 'pulsing-border' && (
+            <PulsingBorder className="absolute inset-0 w-full h-full" fit="cover"
+              colorBack="transparent" colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
+          )}
+          {atmosphereStyle === 'god-rays' && (
+            <GodRays className="absolute inset-0 w-full h-full" fit="cover"
+              colorBack="transparent" colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
+          )}
+          {atmosphereStyle === 'smoke-ring' && (
+            <SmokeRing className="absolute inset-0 w-full h-full" fit="cover"
+              colorBack="transparent" colors={[meshColors.color1, meshColors.color2, meshColors.color3]}
+              speed={meshSpeedToNumber(meshSpeed)} />
           )}
         </div>
       )}

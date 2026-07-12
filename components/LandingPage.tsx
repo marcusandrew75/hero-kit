@@ -243,10 +243,9 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </h1>
 
           <p className="text-[17px] md:text-[19px] leading-relaxed mb-10 max-w-2xl" style={{ color: T.muted }}>
-            HeroKit does one thing extremely well: the Hero. The most important section that
-            sets the tone for the whole page — nail it with real print, dither and glitch
-            effects, painted exactly where you want them, exported up to 4K. Free, powerful,
-            in your browser.
+            HeroKit does one thing extremely well: the Hero — the section that sets the tone
+            for your whole page. Nail it with real print, dither and glitch effects, and
+            export up to 4K. Free. Powerful. In your browser.
           </p>
 
           <div className="flex items-center gap-5 flex-wrap">

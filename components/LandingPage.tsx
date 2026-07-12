@@ -243,9 +243,10 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </h1>
 
           <p className="text-[17px] md:text-[19px] leading-relaxed mb-10 max-w-2xl" style={{ color: T.muted }}>
-            HeroKit does one thing: the hero. The first screen sets the tone for the whole
-            page — nail it with real print, dither and glitch effects, painted exactly where
-            you want them, exported up to 4K. Free, in your browser, nothing leaves your machine.
+            HeroKit does one thing extremely well: the Hero. The most important section that
+            sets the tone for the whole page — nail it with real print, dither and glitch
+            effects, painted exactly where you want them, exported up to 4K. Free, powerful,
+            in your browser.
           </p>
 
           <div className="flex items-center gap-5 flex-wrap">
@@ -595,9 +596,8 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
               <p className="text-[14.5px] leading-relaxed mb-6" style={{ color: T.muted }}>
                 30+ years in design — and I started in <span style={{ color: T.text, fontWeight: 600 }}>print</span>,
                 back when halftone screens and ink separations were the day job, not a filter menu.
-                That's why every effect in HeroKit is built from the real technique. Along the way I
-                made <span style={{ color: T.text, fontWeight: 600 }}>Cabana</span>, the Figma design
-                system used by thousands; HeroKit is the tool I wanted on my own desk.
+                That's why every effect in HeroKit is built from the real technique.
+                HeroKit is the tool I wanted on my own desk.
               </p>
 
               <div className="flex flex-wrap gap-2">

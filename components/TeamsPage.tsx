@@ -118,9 +118,6 @@ const TeamsPage: React.FC = () => {
           </p>
 
           <ContactCta />
-          <p className="mt-4 text-[12px] font-medium" style={{ color: T.dim }}>
-            Opens an email to <span style={{ fontWeight: 600, color: T.muted }}>teams@herokit.app</span> — a real person replies.
-          </p>
         </div>
       </section>
 

@@ -9,7 +9,7 @@ import {
 // shared primitives from landing/shared.tsx, same tokens, no new visual
 // system. The free tool is untouched; this page carries its own offer.
 
-const CONTACT_HREF = 'mailto:marc@allyoucan.co?subject=HeroKit%20for%20Teams'; // placeholder CTA target
+const CONTACT_HREF = 'mailto:teams@herokit.app?subject=HeroKit%20for%20Teams';
 
 const TITLE = 'HeroKit for Teams — Your brand, running as a tool';
 const DESCRIPTION =

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { T } from './ui/HardwareControls';
 import {
   MONO, GROTESK, SectionTag, Led, MarketingMotionStyles, useScrollReveal,
@@ -31,6 +31,36 @@ const ContactCta: React.FC<{ small?: boolean; label?: string }> = ({ small, labe
     </div>
   )
 );
+
+// Logos drop into public/landing/logos/ as <slug>.svg or <slug>.png —
+// e.g. sennheiser.svg. Either extension works; until a file exists the
+// company renders as a plain text name so the strip never looks broken.
+const CABANA_LOGOS = [
+  { name: 'Sennheiser', slug: 'sennheiser' },
+  { name: 'Cisco', slug: 'cisco' },
+  { name: 'Boardriders', slug: 'boardriders' },
+  { name: 'Buffer', slug: 'buffer' },
+  { name: 'Dolby', slug: 'dolby' },
+  { name: 'Logitech', slug: 'logitech' },
+  { name: 'Spreadshirt', slug: 'spreadshirt' },
+];
+
+const CompanyLogo: React.FC<{ name: string; slug: string }> = ({ name, slug }) => {
+  // Try svg → png → text fallback
+  const [ext, setExt] = useState<'svg' | 'png' | 'none'>('svg');
+  if (ext === 'none') {
+    return (
+      <span className="text-[15px] font-bold" style={{ ...GROTESK, color: T.dim }}>{name}</span>
+    );
+  }
+  return (
+    <img src={`/landing/logos/${slug}.${ext}`} alt={name}
+      className="h-6 md:h-7 w-auto object-contain"
+      style={{ filter: 'grayscale(1)', opacity: 0.55 }}
+      loading="lazy"
+      onError={() => setExt(ext === 'svg' ? 'png' : 'none')} />
+  );
+};
 
 const TeamsPage: React.FC = () => {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -225,24 +255,19 @@ const TeamsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* ── 7 · Credibility strip — placeholder, content to follow ──────── */}
+      {/* ── 7 · Credibility strip ────────────────────────────────────────── */}
+      {/* Deliberately attributed to Cabana and to practitioners AT these
+          companies — not framed as HeroKit for Teams clients. */}
       <section className="max-w-6xl mx-auto px-6 pb-24 md:pb-32">
-        <div className="control-panel landing-reveal" style={{ padding: '26px 24px' }}>
-          <div className="flex flex-wrap items-center justify-center gap-3 mb-5">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <span key={i} aria-hidden
-                className="flex items-center justify-center h-12 w-32 rounded-lg text-[10px] font-bold"
-                style={{
-                  ...MONO, color: T.dim,
-                  background: T.panel, border: `1px dashed ${T.borderDk}`,
-                }}>
-                CLIENT LOGO
-              </span>
-            ))}
-          </div>
-          <p className="text-center text-[12px] font-medium" style={{ ...MONO, color: T.dim }}>
-            [ 30 years / enterprise experience line — to follow ]
+        <div className="control-panel landing-reveal" style={{ padding: '30px 26px' }}>
+          <p className="text-center text-[13.5px] leading-relaxed max-w-2xl mx-auto mb-7" style={{ color: T.muted }}>
+            Set up and run by <span style={{ color: T.text, fontWeight: 600 }}>Marc Andrew</span> —
+            30 years in design, maker of <span style={{ color: T.text, fontWeight: 600 }}>Cabana</span>,
+            used by designers and developers at:
           </p>
+          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
+            {CABANA_LOGOS.map(l => <CompanyLogo key={l.name} {...l} />)}
+          </div>
         </div>
       </section>
 

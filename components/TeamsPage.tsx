@@ -253,21 +253,22 @@ const TeamsPage: React.FC = () => {
         </div>
       </section>
 
-      {/* ── 7 · Credibility strip ────────────────────────────────────────── */}
-      {/* Deliberately attributed to Cabana and to practitioners AT these
-          companies — not framed as HeroKit for Teams clients. */}
-      <section className="max-w-6xl mx-auto px-6 pb-24 md:pb-32">
-        <div className="control-panel landing-reveal" style={{ padding: '30px 26px' }}>
-          <p className="text-center text-[13.5px] leading-relaxed max-w-2xl mx-auto mb-7" style={{ color: T.muted }}>
-            Set up and run by <span style={{ color: T.text, fontWeight: 600 }}>Marc Andrew</span> —
-            30 years in design, maker of <span style={{ color: T.text, fontWeight: 600 }}>Cabana</span>,
-            used by designers and developers at:
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
-            {CABANA_LOGOS.map(l => <CompanyLogo key={l.name} {...l} />)}
+      {/* ── 7 · Credibility strip — hidden for now, Marc undecided on the
+          logo approach. Copy + logo files + components all kept intact. ── */}
+      {false && (
+        <section className="max-w-6xl mx-auto px-6 pb-24 md:pb-32">
+          <div className="control-panel landing-reveal" style={{ padding: '30px 26px' }}>
+            <p className="text-center text-[13.5px] leading-relaxed max-w-2xl mx-auto mb-7" style={{ color: T.muted }}>
+              Set up and run by <span style={{ color: T.text, fontWeight: 600 }}>Marc Andrew</span> —
+              30 years in design, maker of <span style={{ color: T.text, fontWeight: 600 }}>Cabana</span>,
+              used by designers and developers at:
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-6">
+              {CABANA_LOGOS.map(l => <CompanyLogo key={l.name} {...l} />)}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ── 8 · Final CTA ────────────────────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-6 pb-16">

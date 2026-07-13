@@ -1630,6 +1630,33 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </p>
           </EffectSection>
 
+          {/* Postcard */}
+          <EffectSection label="Postcard" number={15} enabled={state.postcardEnabled}
+            onToggle={v => set({ postcardEnabled: v })}>
+            <Row label="Saturation">
+              <HwSlider value={state.postcardSaturation} min={0} max={100}
+                onChange={v => set({ postcardSaturation: v })} />
+            </Row>
+            <Row label="Warmth">
+              <HwSlider value={state.postcardWarmth} min={-50} max={50}
+                onChange={v => set({ postcardWarmth: v })} />
+            </Row>
+            <Row label="Palette">
+              {/* Per-channel quantization levels — fewer = harder retro clamp */}
+              <HwSlider value={state.postcardLevels} min={2} max={8}
+                onChange={v => set({ postcardLevels: v })} />
+            </Row>
+            <Row label="Texture">
+              {/* Bayer cell size — 1 reads as linen-postcard weave, larger
+                  becomes visible 90s-videogame dither */}
+              <HwSlider value={state.postcardScale} min={1} max={8}
+                onChange={v => set({ postcardScale: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Oversaturated limited-palette color with a fine ordered texture — vintage linen travel postcard at fine Texture, 90s videogame at chunky.
+            </p>
+          </EffectSection>
+
         </HardwarePanel>
 
         {/* ── Light & FX ─────────────────────────────────────────────────── */}

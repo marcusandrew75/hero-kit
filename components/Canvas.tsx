@@ -1178,6 +1178,53 @@ const applyAsciiDither = (
 // same technique every other effect in this pipeline already uses and cost
 // a fraction of the time for the same visual result.
 
+// ─── Postcard ─────────────────────────────────────────────────────────────────
+// Oversaturated warm grade + per-channel palette quantization + fine ordered
+// (Bayer) texture. One set of mechanics serving two eras: at Texture 1 the
+// 8×8 threshold grid reads as the embossed weave of a 1940s-50s linen travel
+// postcard; pushed larger it becomes the visible dither of 90s videogame art
+// — both were faking rich color from a limited palette, decades apart.
+
+const applyPostcard = (
+  data: Uint8ClampedArray, w: number, h: number,
+  saturation: number, warmth: number, levels: number, scale: number,
+): Uint8ClampedArray => {
+  const out = new Uint8ClampedArray(data);
+  const matrix = buildBayerMatrix(8);
+  const denom = 64;
+  const lvl  = Math.max(2, Math.min(8, Math.round(levels)));
+  const step = 255 / (lvl - 1);
+  const satBoost = 1 + saturation / 60;   // 0–100 → 1.0–2.67 mix factor
+  const warmShift = warmth * 0.9;         // -50..50 → ±45 in 8-bit terms
+  const cell = Math.max(1, Math.round(scale));
+
+  for (let y = 0; y < h; y++) {
+    const my = Math.floor(y / cell) % 8;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      let r = data[i], g = data[i+1], b = data[i+2];
+
+      // Saturation boost — push channels away from their shared gray
+      const gray = r * 0.299 + g * 0.587 + b * 0.114;
+      r = gray + (r - gray) * satBoost;
+      g = gray + (g - gray) * satBoost;
+      b = gray + (b - gray) * satBoost;
+
+      // Warmth — classic warm/cool axis (red up, blue down)
+      r += warmShift;
+      b -= warmShift;
+
+      // Ordered quantization — Bayer threshold jitter, then clamp each
+      // channel to the reduced palette grid
+      const t = (matrix[my][Math.floor(x / cell) % 8] / denom - 0.5) * step;
+      out[i]   = Math.max(0, Math.min(255, Math.round((r + t) / step) * step));
+      out[i+1] = Math.max(0, Math.min(255, Math.round((g + t) / step) * step));
+      out[i+2] = Math.max(0, Math.min(255, Math.round((b + t) / step) * step));
+    }
+  }
+  return out;
+};
+
 // ─── Silkscreen ───────────────────────────────────────────────────────────────
 // Flat spot-ink posterization — the 70s-movie-poster / vintage book-plate / comic
 // look. Three passes of logic per pixel, no gradients anywhere in the output:
@@ -2062,6 +2109,11 @@ interface ProcessedImageProps {
   silkscreenInk3: string;
   silkscreenKeyThreshold: number;
   silkscreenStipple: number;
+  postcardEnabled: boolean;
+  postcardSaturation: number;
+  postcardWarmth: number;
+  postcardLevels: number;
+  postcardScale: number;
   halftoneEnabled: boolean;
   halftonePattern: 'dot' | 'line' | 'crosshatch';
   halftoneDotSize: number;
@@ -2118,6 +2170,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
+    postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
     halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
     halftoneDuotoneEnabled, halftoneBgColor,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
@@ -2193,6 +2246,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
           if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#ebf2b5');
+          if (postcardEnabled)     processed = applyPostcard(processed, w, h, postcardSaturation, postcardWarmth, postcardLevels, postcardScale);
           if (canvasDitherStyle === 'ascii') {
             processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
           } else if (canvasDitherStyle !== 'none') {
@@ -2252,6 +2306,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
       silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
+      postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
       halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
       halftoneDuotoneEnabled, halftoneBgColor,
       effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
@@ -2416,6 +2471,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
+    postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     atmosphereStyle, meshColors,
     meshSpeed, meshComplexity, meshTurbulence, meshZoom, meshContrast, meshFrequency,
@@ -2464,7 +2520,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
     (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) ||
     (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false) ||
-    (silkscreenEnabled ?? false)
+    (silkscreenEnabled ?? false) || (postcardEnabled ?? false)
   );
 
   const hasSource = !!(imageUrl || videoUrl);
@@ -2572,6 +2628,11 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 silkscreenInk3={silkscreenInk3 ?? '#e0c22e'}
                 silkscreenKeyThreshold={silkscreenKeyThreshold ?? 30}
                 silkscreenStipple={silkscreenStipple ?? 35}
+                postcardEnabled={postcardEnabled ?? false}
+                postcardSaturation={postcardSaturation ?? 45}
+                postcardWarmth={postcardWarmth ?? 18}
+                postcardLevels={postcardLevels ?? 5}
+                postcardScale={postcardScale ?? 1}
                 halftoneEnabled={halftoneEnabled ?? false}
                 halftonePattern={halftonePattern ?? 'dot'}
                 halftoneDotSize={halftoneDotSize ?? 4}

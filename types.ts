@@ -167,6 +167,15 @@ export interface BackgroundState {
   silkscreenKeyThreshold: number; // 0–100, luminance below this → black key plate
   silkscreenStipple: number;      // 0–100, speckle noise at tonal boundaries
 
+  // Postcard — oversaturated warm grade + limited palette + fine ordered
+  // texture. Texture scale sweeps the look from vintage linen-postcard weave
+  // (fine) to 90s videogame dither (chunky) — same mechanics, different era.
+  postcardEnabled: boolean;
+  postcardSaturation: number; // 0–100, saturation boost
+  postcardWarmth: number;     // -50 to 50, warm/cool shift
+  postcardLevels: number;     // 2–8 per-channel quantization levels
+  postcardScale: number;      // 1–8 dither cell size: 1 = linen weave, 8 = chunky game dither
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

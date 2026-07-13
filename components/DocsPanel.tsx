@@ -92,6 +92,10 @@ const DOCS: DocSection[] = [
         title: 'Silkscreen',
         body: `Flat spot-ink printing is the language of the great 1970s movie posters — think Dirty Harry — as well as vintage book plates and comics: tight printing budgets meant every poster was an exercise in reduction, an entire scene rebuilt from a paper ground, two or three ink colors, and a black "key" plate carrying the silhouettes and linework. HeroKit's version works the same way: each pixel is assigned to the nearest of your chosen inks, anything darker than the Key plate threshold prints solid black, and Stipple breaks tonal boundaries into speckle — the way sparse ink coverage actually behaves at the edge of a screen-printed region, and the same reason those old posters feel hand-made instead of computed.`,
       },
+      {
+        title: 'Postcard',
+        body: `Two eras of the same trick. Linen postcards of the 1930s-50s — the "Greetings from…" golden age — were printed on embossed, cloth-textured card stock with wildly idealized color: skies bluer, sunsets hotter, everything more saturated than life, with the weave of the linen visible across every inch. Forty years later, 90s videogame artists were solving the same problem from the other direction — faking rich color from a hardware-limited palette using ordered dithering. Postcard runs both: a saturation-and-warmth push toward that idealized-America palette, per-channel color quantization, and an ordered texture whose Texture control sweeps the result from fine linen weave to chunky VGA-era dither. Same mechanics, decades apart.`,
+      },
     ],
   },
   {
@@ -165,6 +169,12 @@ const DOCS: DocSection[] = [
 interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
+  {
+    version: '3.2', date: '13 Jul 2026',
+    items: [
+      'Added: Postcard effect — oversaturated limited-palette color with a fine ordered texture. Sweep the Texture control from vintage linen travel postcard to 90s videogame dither: same mechanics, decades apart',
+    ],
+  },
   {
     version: '3.1', date: '13 Jul 2026',
     items: [

@@ -41,7 +41,7 @@ const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, sm
 // ─── Content data ─────────────────────────────────────────────────────────────
 
 const EFFECTS_RACK: string[] = [
-  'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation', 'Silkscreen',
+  'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation', 'Silkscreen', 'Postcard',
   'Bayer Dither', 'Floyd–Steinberg', 'Atkinson', 'ASCII Dither',
   'Duotone Dither', 'Color Grade', 'Split Tone', 'Edge Glow',
   'Image Glitch', 'Dispersion', 'Displacement Warp', 'Channel Smear',

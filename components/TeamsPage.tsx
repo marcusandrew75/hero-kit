@@ -18,15 +18,15 @@ const DESCRIPTION =
 
 /** Primary CTA — same hardware button as the rest of the site, as a real
     link so it's keyboard-focusable and works without JS. */
-const ContactCta: React.FC<{ small?: boolean }> = ({ small }) => (
+const ContactCta: React.FC<{ small?: boolean; label?: string }> = ({ small, label = 'Talk to us about your brand' }) => (
   small ? (
     <a href={CONTACT_HREF} className="hw-cta" style={{ width: 'auto', padding: '9px 18px', fontSize: 12, textDecoration: 'none' }}>
-      Set up your brand
+      {label}
     </a>
   ) : (
     <div className="hw-cta-mount" style={{ display: 'inline-block' }}>
       <a href={CONTACT_HREF} className="hw-cta" style={{ width: 'auto', padding: '13px 34px', fontSize: 14, textDecoration: 'none' }}>
-        <i className="ph-bold ph-arrow-right text-base" aria-hidden /> Set up your brand
+        <i className="ph-bold ph-arrow-right text-base" aria-hidden /> {label}
       </a>
     </div>
   )
@@ -69,7 +69,7 @@ const TeamsPage: React.FC = () => {
             <span className="text-[10px] font-medium leading-none" style={{ color: T.accent }}>ヒーロー</span>
           </div>
         </a>
-        <ContactCta small />
+        <ContactCta small label="Talk to us" />
       </header>
 
       {/* ── 1 · Hero ─────────────────────────────────────────────────────── */}
@@ -90,6 +90,9 @@ const TeamsPage: React.FC = () => {
           </p>
 
           <ContactCta />
+          <p className="mt-4 text-[12px] font-medium" style={{ color: T.dim }}>
+            Opens an email to <span style={{ fontWeight: 600, color: T.muted }}>teams@herokit.app</span> — a real person replies.
+          </p>
         </div>
       </section>
 
@@ -250,7 +253,7 @@ const TeamsPage: React.FC = () => {
           <h2 className="text-[34px] md:text-[52px] font-bold leading-tight mb-8" style={GROTESK}>
             Your brand, live in a week.
           </h2>
-          <ContactCta />
+          <ContactCta label="Set up your brand" />
         </div>
 
         {/* Footer */}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
-import PreviewOverlay, { PreviewLayout, PreviewFont, PreviewCopy, PreviewCopyField } from './components/PreviewOverlay';
+import PreviewOverlay, { PreviewLayout, PreviewFont, PreviewTheme, PreviewCopy, PreviewCopyField } from './components/PreviewOverlay';
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
 import LandingPage from './components/LandingPage';
@@ -65,6 +65,16 @@ const App: React.FC = () => {
   const [previewCopy, setPreviewCopy]     = useState<PreviewCopy>(() => {
     try { return JSON.parse(localStorage.getItem('herokit-preview-copy') || '{}'); }
     catch { return {}; }
+  });
+  // Text theme + uploaded logo — persisted for the same reason as the copy.
+  const [previewTheme, setPreviewTheme]   = useState<PreviewTheme>(() =>
+    (localStorage.getItem('herokit-preview-theme') as PreviewTheme) || 'light');
+  const [previewLogo, setPreviewLogo]     = useState<string | null>(() =>
+    localStorage.getItem('herokit-preview-logo'));
+  // Optional mock elements removed via their hover ✕ (eyebrow, subhead…)
+  const [previewHidden, setPreviewHidden] = useState<PreviewCopyField[]>(() => {
+    try { return JSON.parse(localStorage.getItem('herokit-preview-hidden') || '[]'); }
+    catch { return []; }
   });
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
@@ -147,9 +157,38 @@ const App: React.FC = () => {
     });
   };
 
+  // Reset restores both custom copy and any elements removed via their ✕
   const handlePreviewCopyReset = () => {
     setPreviewCopy({});
-    try { localStorage.removeItem('herokit-preview-copy'); } catch { /* non-critical */ }
+    setPreviewHidden([]);
+    try {
+      localStorage.removeItem('herokit-preview-copy');
+      localStorage.removeItem('herokit-preview-hidden');
+    } catch { /* non-critical */ }
+  };
+
+  const handlePreviewHide = (field: PreviewCopyField) => {
+    setPreviewHidden(prev => {
+      const next = prev.includes(field) ? prev : [...prev, field];
+      try { localStorage.setItem('herokit-preview-hidden', JSON.stringify(next)); } catch { /* non-critical */ }
+      return next;
+    });
+  };
+
+  const handlePreviewThemeToggle = () => {
+    setPreviewTheme(prev => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try { localStorage.setItem('herokit-preview-theme', next); } catch { /* non-critical */ }
+      return next;
+    });
+  };
+
+  const handlePreviewLogoChange = (dataUrl: string | null) => {
+    setPreviewLogo(dataUrl);
+    try {
+      if (dataUrl === null) localStorage.removeItem('herokit-preview-logo');
+      else localStorage.setItem('herokit-preview-logo', dataUrl);
+    } catch { /* quota — logo still works for this session */ }
   };
 
   const handleApplyLook = (patch: Partial<BackgroundState>) =>
@@ -221,8 +260,10 @@ const App: React.FC = () => {
           {/* Context preview overlay */}
           {showPreview && (
             <div className="absolute inset-0 z-[100]">
-              <PreviewOverlay layout={previewLayout} font={previewFont}
-                copy={previewCopy} onCopyChange={handlePreviewCopyChange} />
+              <PreviewOverlay layout={previewLayout} font={previewFont} theme={previewTheme}
+                copy={previewCopy} onCopyChange={handlePreviewCopyChange}
+                logo={previewLogo} onLogoChange={handlePreviewLogoChange}
+                hidden={previewHidden} onHide={handlePreviewHide} />
             </div>
           )}
         </div>
@@ -322,6 +363,16 @@ const App: React.FC = () => {
                 <span style={previewFont === 'serif' ? { fontFamily: '"Playfair Display", serif' } : {}} className="text-[15px] font-semibold leading-none">Aa</span>
               </button>
 
+              {/* Text theme — white type for dark images, ink type for light ones */}
+              <button
+                onClick={handlePreviewThemeToggle}
+                title={previewTheme === 'light' ? 'Switch preview text to dark (for light backgrounds)' : 'Switch preview text to light (for dark backgrounds)'}
+                className="w-8 h-8 flex items-center justify-center rounded-full transition-all text-black/35 hover:text-black/70"
+              >
+                <span className="w-4 h-4 rounded-full border border-black/30"
+                  style={{ background: previewTheme === 'light' ? '#ffffff' : '#1a1917' }} />
+              </button>
+
               {/* Divider */}
               <div className="w-px h-4 bg-black/12 mx-0.5" />
 
@@ -339,13 +390,13 @@ const App: React.FC = () => {
                 <span className="text-[10px] text-black/40 w-6 tabular-nums">{previewDim}%</span>
               </div>
 
-              {/* Reset custom copy — only surfaces once something's been edited */}
-              {Object.keys(previewCopy).length > 0 && (
+              {/* Reset custom copy / hidden elements — only surfaces once something's changed */}
+              {(Object.keys(previewCopy).length > 0 || previewHidden.length > 0) && (
                 <>
                   <div className="w-px h-4 bg-black/12 mx-0.5" />
                   <button
                     onClick={handlePreviewCopyReset}
-                    title="Reset preview copy to the sample text"
+                    title="Reset preview copy and restore removed elements"
                     className="w-8 h-8 flex items-center justify-center rounded-full text-black/35 hover:text-black/70 transition-all"
                   >
                     {/* arrow-counter-clockwise matches the sidebar's Reset affordance —

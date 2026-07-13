@@ -299,13 +299,14 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
             it… and the headline vanishes into the busy part of the image. Back you go.
             HeroKit kills that loop — flip on <span style={{ color: T.text, fontWeight: 600 }}>Preview
             in Context</span> and a real hero layout sits over your canvas while you work: nav,
-            headline, sub-copy and CTAs. And they're not dummy words — click any of them and{' '}
-            <span style={{ color: T.text, fontWeight: 600 }}>type your own</span>, straight onto the
-            preview. Your brand, your headline, your buttons, remembered for next time. If the type
-            reads, it ships.
+            headline, sub-copy and CTAs. And it's not a dummy mock — click any text and{' '}
+            <span style={{ color: T.text, fontWeight: 600 }}>type your own</span>, drop{' '}
+            <span style={{ color: T.text, fontWeight: 600 }}>your logo</span> into the nav, flip the
+            type between light and dark, and watch it all reflow into a real mobile hero on narrow
+            ratios. Your brand, remembered for next time. If the type reads, it ships.
           </p>
           <div className="flex flex-wrap gap-x-7 gap-y-2 mb-10">
-            {['Type your own copy on the canvas', 'Three layout alignments', 'Serif or grotesk headlines', 'Dim control for contrast checks'].map((f, i) => (
+            {['Type your own copy on the canvas', 'Drop in your own logo', 'Light or dark type', 'Auto mobile layout on narrow ratios', 'Serif or grotesk headlines'].map((f, i) => (
               <span key={f} className="inline-flex items-center gap-2 text-[12px] font-semibold" style={{ color: T.muted }}>
                 <Led delay={i * 0.4} /> {f}
               </span>

@@ -170,6 +170,15 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.3', date: '13 Jul 2026',
+    items: [
+      'Added: dark/light text toggle in Preview in Context — ink-colored type for light backgrounds (pale Silkscreen paper, bright Postcard skies) where white type was unreadable',
+      'Added: drop your own logo into the preview nav — click the logo slot to upload a PNG/SVG, hover to remove. Persists across sessions, so the preview always opens as your brand',
+      'Added: the preview now switches to a real mobile hero layout automatically when the canvas is narrow (9:16 and similar) — compact nav, stacked type, full-width CTAs — instead of cramming the desktop layout into a phone-shaped frame',
+      'Added: remove optional preview elements — hover the brand label, eyebrow, subhead, any button or the nav CTA and click its ✕ to take it out of the mock entirely; the layout collapses the space. Only the headline is permanent. The toolbar reset brings everything back',
+    ],
+  },
+  {
     version: '3.2', date: '13 Jul 2026',
     items: [
       'Added: Postcard effect — oversaturated limited-palette color with a fine ordered texture. Sweep the Texture control from vintage linen travel postcard to 90s videogame dither: same mechanics, decades apart',

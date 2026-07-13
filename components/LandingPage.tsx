@@ -49,7 +49,7 @@ const EFFECTS_RACK: string[] = [
   'Effect Mask', 'Film Grain', 'Vignette', 'Pattern Overlays',
 ];
 
-const GALLERY = Array.from({ length: 6 }, (_, i) =>
+const GALLERY = Array.from({ length: 7 }, (_, i) =>
   `/landing/gallery-${String(i + 1).padStart(2, '0')}.jpg`);
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

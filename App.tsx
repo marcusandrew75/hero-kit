@@ -6,6 +6,7 @@ import PreviewOverlay, { PreviewLayout, PreviewFont } from './components/Preview
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
 import LandingPage from './components/LandingPage';
+import TeamsPage from './components/TeamsPage';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 
@@ -138,6 +139,12 @@ const App: React.FC = () => {
     setState(prev => ({ ...DEFAULT, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl }));
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
+
+  // /teams — B2B marketing page (served via the vercel.json SPA rewrite;
+  // Vite's dev server falls back to index.html for unknown paths natively).
+  if (window.location.pathname === '/teams') {
+    return <TeamsPage />;
+  }
 
   if (showLanding) {
     return (

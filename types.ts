@@ -155,6 +155,18 @@ export interface BackgroundState {
   risoOffset: number;    // 0–10px, misregistration between the two ink layers
   risoGrain: number;     // 0–100, organic ink-edge noise
 
+  // Silkscreen — flat spot-ink posterization: every pixel mapped to the nearest
+  // of a small hand-picked ink set over a paper ground, with a thresholded
+  // black key plate for silhouettes/linework and stipple noise breaking up
+  // tonal boundaries. The 70s-movie-poster / vintage book-plate / comic look.
+  silkscreenEnabled: boolean;
+  silkscreenPaperColor: string;   // lightest ground "paper" ink
+  silkscreenInk1: string;
+  silkscreenInk2: string;
+  silkscreenInk3: string;
+  silkscreenKeyThreshold: number; // 0–100, luminance below this → black key plate
+  silkscreenStipple: number;      // 0–100, speckle noise at tonal boundaries
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

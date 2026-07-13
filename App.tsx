@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
-import PreviewOverlay, { PreviewLayout, PreviewFont } from './components/PreviewOverlay';
+import PreviewOverlay, { PreviewLayout, PreviewFont, PreviewCopy, PreviewCopyField } from './components/PreviewOverlay';
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
 import LandingPage from './components/LandingPage';
@@ -60,6 +60,12 @@ const App: React.FC = () => {
   const [previewLayout, setPreviewLayout] = useState<PreviewLayout>('left');
   const [previewFont, setPreviewFont]     = useState<PreviewFont>('sans');
   const [previewDim, setPreviewDim]       = useState(0);
+  // Custom copy typed onto the preview — persists across sessions so a user's
+  // real headline/brand follows them into every future preview.
+  const [previewCopy, setPreviewCopy]     = useState<PreviewCopy>(() => {
+    try { return JSON.parse(localStorage.getItem('herokit-preview-copy') || '{}'); }
+    catch { return {}; }
+  });
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const [aspectRatio, setAspectRatio]     = useState('free');
@@ -131,6 +137,21 @@ const App: React.FC = () => {
 
   const handleChange = (patch: Partial<BackgroundState>) => setState(prev => ({ ...prev, ...patch }));
 
+  const handlePreviewCopyChange = (field: PreviewCopyField, value: string | null) => {
+    setPreviewCopy(prev => {
+      const next = { ...prev };
+      if (value === null) delete next[field];
+      else next[field] = value;
+      try { localStorage.setItem('herokit-preview-copy', JSON.stringify(next)); } catch { /* quota — non-critical */ }
+      return next;
+    });
+  };
+
+  const handlePreviewCopyReset = () => {
+    setPreviewCopy({});
+    try { localStorage.removeItem('herokit-preview-copy'); } catch { /* non-critical */ }
+  };
+
   const handleApplyLook = (patch: Partial<BackgroundState>) =>
     setState(prev => ({ ...prev, ...patch, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl }));
 
@@ -200,7 +221,8 @@ const App: React.FC = () => {
           {/* Context preview overlay */}
           {showPreview && (
             <div className="absolute inset-0 z-[100]">
-              <PreviewOverlay layout={previewLayout} font={previewFont} />
+              <PreviewOverlay layout={previewLayout} font={previewFont}
+                copy={previewCopy} onCopyChange={handlePreviewCopyChange} />
             </div>
           )}
         </div>
@@ -316,6 +338,22 @@ const App: React.FC = () => {
                 />
                 <span className="text-[10px] text-black/40 w-6 tabular-nums">{previewDim}%</span>
               </div>
+
+              {/* Reset custom copy — only surfaces once something's been edited */}
+              {Object.keys(previewCopy).length > 0 && (
+                <>
+                  <div className="w-px h-4 bg-black/12 mx-0.5" />
+                  <button
+                    onClick={handlePreviewCopyReset}
+                    title="Reset preview copy to the sample text"
+                    className="w-8 h-8 flex items-center justify-center rounded-full text-black/35 hover:text-black/70 transition-all"
+                  >
+                    {/* arrow-counter-clockwise matches the sidebar's Reset affordance —
+                        text-t-slash rendered as a broken-looking glyph in this icon set */}
+                    <i className="ph ph-arrow-counter-clockwise text-base" />
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>

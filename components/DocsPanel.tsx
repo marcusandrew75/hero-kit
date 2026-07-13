@@ -88,6 +88,10 @@ const DOCS: DocSection[] = [
         title: 'Riso Print',
         body: `The Risograph, built by Riso Kagaku Corporation in Japan starting in the 1980s, was designed as a cheap, fast stencil duplicator for schools and offices — not an art tool. It became one anyway. Riso printing runs each ink color through the machine as a separate pass, and the master stencil never registers with pixel-perfect precision — the slight offset between passes, the visible grain of the ink deposit, the limited palette of vivid spot-color inks, all of it is mechanical imperfection that the zine and independent-print scene adopted as an aesthetic in its own right, specifically in contrast to the flawless precision of CMYK offset. Misregistration and Grain here are simulating exactly that imperfection on purpose.`,
       },
+      {
+        title: 'Silkscreen',
+        body: `Flat spot-ink printing is the language of the great 1970s movie posters — think Dirty Harry — as well as vintage book plates and comics: tight printing budgets meant every poster was an exercise in reduction, an entire scene rebuilt from a paper ground, two or three ink colors, and a black "key" plate carrying the silhouettes and linework. HeroKit's version works the same way: each pixel is assigned to the nearest of your chosen inks, anything darker than the Key plate threshold prints solid black, and Stipple breaks tonal boundaries into speckle — the way sparse ink coverage actually behaves at the edge of a screen-printed region, and the same reason those old posters feel hand-made instead of computed.`,
+      },
     ],
   },
   {
@@ -161,6 +165,13 @@ const DOCS: DocSection[] = [
 interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
+  {
+    version: '3.1', date: '13 Jul 2026',
+    items: [
+      'Added: Silkscreen effect — flat spot-ink posterization with a paper ground, three pickable inks, a black key plate for silhouettes and linework, and stipple noise at tonal boundaries. The 70s-movie-poster / book-plate / comic look',
+      'Added: editable copy in Preview in Context — click the brand name, headline, sub-copy or any button label and type your own, straight onto the preview. Enter commits, Escape reverts, custom copy follows you across layouts and sessions, and a reset control in the preview toolbar restores the sample text',
+    ],
+  },
   {
     version: '3.0', date: '12 Jul 2026',
     items: [

@@ -41,7 +41,7 @@ const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, sm
 // ─── Content data ─────────────────────────────────────────────────────────────
 
 const EFFECTS_RACK: string[] = [
-  'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation',
+  'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation', 'Silkscreen',
   'Bayer Dither', 'Floyd–Steinberg', 'Atkinson', 'ASCII Dither',
   'Duotone Dither', 'Color Grade', 'Split Tone', 'Edge Glow',
   'Image Glitch', 'Dispersion', 'Displacement Warp', 'Channel Smear',
@@ -299,10 +299,13 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
             it… and the headline vanishes into the busy part of the image. Back you go.
             HeroKit kills that loop — flip on <span style={{ color: T.text, fontWeight: 600 }}>Preview
             in Context</span> and a real hero layout sits over your canvas while you work: nav,
-            headline, sub-copy and CTAs. If the type reads, it ships.
+            headline, sub-copy and CTAs. And they're not dummy words — click any of them and{' '}
+            <span style={{ color: T.text, fontWeight: 600 }}>type your own</span>, straight onto the
+            preview. Your brand, your headline, your buttons, remembered for next time. If the type
+            reads, it ships.
           </p>
           <div className="flex flex-wrap gap-x-7 gap-y-2 mb-10">
-            {['Three layout alignments', 'Serif or grotesk headlines', 'Dim control for contrast checks'].map((f, i) => (
+            {['Type your own copy on the canvas', 'Three layout alignments', 'Serif or grotesk headlines', 'Dim control for contrast checks'].map((f, i) => (
               <span key={f} className="inline-flex items-center gap-2 text-[12px] font-semibold" style={{ color: T.muted }}>
                 <Led delay={i * 0.4} /> {f}
               </span>

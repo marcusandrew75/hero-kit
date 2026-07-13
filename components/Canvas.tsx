@@ -1178,6 +1178,68 @@ const applyAsciiDither = (
 // same technique every other effect in this pipeline already uses and cost
 // a fraction of the time for the same visual result.
 
+// ─── Silkscreen ───────────────────────────────────────────────────────────────
+// Flat spot-ink posterization — the 70s-movie-poster / vintage book-plate / comic
+// look. Three passes of logic per pixel, no gradients anywhere in the output:
+//   1. Black key plate: luminance below the threshold prints solid black —
+//      this is what carves out silhouettes and linework.
+//   2. Nearest-ink assignment: everything else maps to whichever of the four
+//      flat inks (paper ground + 3 spot inks) is closest in RGB space, so
+//      sky lands on the blue ink, foliage on the green, etc.
+//   3. Stipple: deterministic per-pixel noise (hashed from coordinates, so
+//      re-renders are stable) jitters values before both decisions above —
+//      tonal boundaries break up into speckle instead of hard contours,
+//      exactly how sparse ink coverage behaves on a real screen print.
+
+const applySilkscreen = (
+  data: Uint8ClampedArray, w: number, h: number,
+  paperColor: string, ink1: string, ink2: string, ink3: string,
+  keyThreshold: number, stipple: number,
+): Uint8ClampedArray => {
+  const parseHex = (hex: string): [number, number, number] => {
+    const h2 = hex.replace('#', '');
+    return [parseInt(h2.slice(0,2),16)||0, parseInt(h2.slice(2,4),16)||0, parseInt(h2.slice(4,6),16)||0];
+  };
+  const inks = [parseHex(paperColor), parseHex(ink1), parseHex(ink2), parseHex(ink3)];
+  const out = new Uint8ClampedArray(data);
+
+  // Deterministic per-pixel hash → [-0.5, 0.5) — same speckle every render
+  const hashNoise = (x: number, y: number): number => {
+    let n = x * 374761393 + y * 668265263;
+    n = (n ^ (n >> 13)) * 1274126177;
+    return (((n ^ (n >> 16)) >>> 0) / 4294967296) - 0.5;
+  };
+
+  const keyCut = (keyThreshold / 100) * 255;
+  const jitterScale = stipple * 1.1; // 0–110 in 8-bit luminance terms
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      const jitter = hashNoise(x, y) * jitterScale;
+      const lum = r * 0.299 + g * 0.587 + b * 0.114 + jitter;
+
+      if (lum < keyCut) {
+        out[i] = 0; out[i+1] = 0; out[i+2] = 0;
+        continue;
+      }
+
+      // Nearest ink in RGB space, with the same jitter nudging each channel
+      // so ink-vs-ink boundaries stipple too (not just the black key edge)
+      const jr = r + jitter, jg = g + jitter, jb = b + jitter;
+      let best = 0, bestDist = Infinity;
+      for (let k = 0; k < inks.length; k++) {
+        const dr = jr - inks[k][0], dg = jg - inks[k][1], db = jb - inks[k][2];
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) { bestDist = dist; best = k; }
+      }
+      out[i] = inks[best][0]; out[i+1] = inks[best][1]; out[i+2] = inks[best][2];
+    }
+  }
+  return out;
+};
+
 const applyCmykSeparation = (
   data: Uint8ClampedArray, w: number, h: number,
   dotSize: number, spacing: number,
@@ -1993,6 +2055,13 @@ interface ProcessedImageProps {
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;
   cmykSpacing: number;
+  silkscreenEnabled: boolean;
+  silkscreenPaperColor: string;
+  silkscreenInk1: string;
+  silkscreenInk2: string;
+  silkscreenInk3: string;
+  silkscreenKeyThreshold: number;
+  silkscreenStipple: number;
   halftoneEnabled: boolean;
   halftonePattern: 'dot' | 'line' | 'crosshatch';
   halftoneDotSize: number;
@@ -2048,6 +2117,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     ditherMatrixSize,
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
     halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
     halftoneDuotoneEnabled, halftoneBgColor,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
@@ -2120,6 +2190,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
+          if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
           if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#ebf2b5');
           if (canvasDitherStyle === 'ascii') {
@@ -2180,6 +2251,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       ditherMatrixSize,
       risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+      silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
       halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
       halftoneDuotoneEnabled, halftoneBgColor,
       effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
@@ -2343,6 +2415,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     ditherMatrixSize,
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     atmosphereStyle, meshColors,
     meshSpeed, meshComplexity, meshTurbulence, meshZoom, meshContrast, meshFrequency,
@@ -2390,7 +2463,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
     (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) ||
-    (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false)
+    (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false) ||
+    (silkscreenEnabled ?? false)
   );
 
   const hasSource = !!(imageUrl || videoUrl);
@@ -2491,6 +2565,13 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 cmykSeparationEnabled={cmykSeparationEnabled ?? false}
                 cmykDotSize={cmykDotSize ?? 4}
                 cmykSpacing={cmykSpacing ?? 8}
+                silkscreenEnabled={silkscreenEnabled ?? false}
+                silkscreenPaperColor={silkscreenPaperColor ?? '#e6dcb1'}
+                silkscreenInk1={silkscreenInk1 ?? '#1e50c8'}
+                silkscreenInk2={silkscreenInk2 ?? '#2d7a34'}
+                silkscreenInk3={silkscreenInk3 ?? '#e0c22e'}
+                silkscreenKeyThreshold={silkscreenKeyThreshold ?? 30}
+                silkscreenStipple={silkscreenStipple ?? 35}
                 halftoneEnabled={halftoneEnabled ?? false}
                 halftonePattern={halftonePattern ?? 'dot'}
                 halftoneDotSize={halftoneDotSize ?? 4}

@@ -1600,6 +1600,36 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </p>
           </EffectSection>
 
+          {/* Silkscreen */}
+          <EffectSection label="Silkscreen" number={14} enabled={state.silkscreenEnabled}
+            onToggle={v => set({ silkscreenEnabled: v })}>
+            <Row label="Paper">
+              <ColorSwatch value={state.silkscreenPaperColor} onChange={v => set({ silkscreenPaperColor: v })} />
+            </Row>
+            <Row label="Ink 1">
+              <ColorSwatch value={state.silkscreenInk1} onChange={v => set({ silkscreenInk1: v })} />
+            </Row>
+            <Row label="Ink 2">
+              <ColorSwatch value={state.silkscreenInk2} onChange={v => set({ silkscreenInk2: v })} />
+            </Row>
+            <Row label="Ink 3">
+              <ColorSwatch value={state.silkscreenInk3} onChange={v => set({ silkscreenInk3: v })} />
+            </Row>
+            <Row label="Key plate">
+              {/* Luminance threshold below which pixels print solid black —
+                  carves the silhouettes/linework out of the image */}
+              <HwSlider value={state.silkscreenKeyThreshold} min={0} max={100}
+                onChange={v => set({ silkscreenKeyThreshold: v })} />
+            </Row>
+            <Row label="Stipple">
+              <HwSlider value={state.silkscreenStipple} min={0} max={100}
+                onChange={v => set({ silkscreenStipple: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Flat spot-ink posterization — paper ground, three inks and a black key plate, with stipple breaking up the tonal boundaries. The vintage poster / book-plate / comic look.
+            </p>
+          </EffectSection>
+
         </HardwarePanel>
 
         {/* ── Light & FX ─────────────────────────────────────────────────── */}

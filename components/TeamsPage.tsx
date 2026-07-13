@@ -38,11 +38,9 @@ const ContactCta: React.FC<{ small?: boolean; label?: string }> = ({ small, labe
 const CABANA_LOGOS = [
   { name: 'Sennheiser', slug: 'sennheiser' },
   { name: 'Cisco', slug: 'cisco' },
-  { name: 'Boardriders', slug: 'boardriders' },
   { name: 'Buffer', slug: 'buffer' },
   { name: 'Dolby', slug: 'dolby' },
   { name: 'Logitech', slug: 'logitech' },
-  { name: 'Spreadshirt', slug: 'spreadshirt' },
 ];
 
 const CompanyLogo: React.FC<{ name: string; slug: string }> = ({ name, slug }) => {

@@ -2593,6 +2593,11 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
             {videoUrl ? (
               <video src={videoUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" style={{ filter: cssFilter }} />
             ) : imageUrl && useProcessedCanvas ? (
+              // Own wrapper so the Background CSS filters (Blur/Frost/B&W…)
+              // apply to the processed canvas exactly as they do to the plain
+              // <img>/<video> paths — without also filtering the tint/duotone
+              // overlay divs that follow as siblings.
+              <div className="absolute inset-0" style={{ filter: cssFilter }}>
               <ProcessedImageCanvas
                 imageUrl={imageUrl}
                 colorGradeEnabled={colorGradeEnabled ?? false}
@@ -2678,6 +2683,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
                 spotBlurRadius={spotBlurRadius ?? 18}
                 blurSpots={blurSpots ?? []}
               />
+              </div>
             ) : imageUrl ? (
               <img src={imageUrl} alt="" crossOrigin="anonymous" className="w-full h-full object-cover" style={{ filter: cssFilter }} />
             ) : null}

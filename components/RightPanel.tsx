@@ -1142,79 +1142,80 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </HardwarePanel>
         )}
 
-        {/* ── Background — hidden for now, parked for a later build ───────── */}
-        {false && (
+        {/* ── Background — image controls (Filter/Blur/Opacity/Mask fades).
+            The Atmosphere block below stays parked for a later build; only
+            the photo-treatment controls are live. ─────────────────────────── */}
+        {hasSource && (
           <HardwarePanel label="Background" number={5}>
-            {/* Filter/Blur/Mask only make sense once there's a photo to act on.
-                Atmosphere below has no such requirement — it's a standalone
-                animated background as much as it is a layer behind a photo. */}
-            {hasSource && (
-              <>
-                <div>
-                  <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Filter</p>
-                  <PatternGrid options={FILTERS} value={state.imageFilter}
-                    onChange={v => set({ imageFilter: v as ImageFilter })} columns={3} />
-                </div>
-                {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
-                  <Row label="Tint color">
-                    <ColorSwatch value={state.tintColor} onChange={v => set({ tintColor: v })} />
-                  </Row>
-                )}
-                <Row label="Blur">
-                  <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
-                    onChange={v => set({ imageBlur: v })} />
-                </Row>
-                <Row label="Opacity">
-                  <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
-                    onChange={v => set({ imageOpacity: v / 100 })} />
-                </Row>
-                <div>
-                  <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Mask</p>
-                  <PatternGrid options={MASKS} value={state.imageMask}
-                    onChange={v => set({ imageMask: v as ImageMask })} columns={3} />
-                </div>
-                {/* Only shown when a mask is active — this is the color the fade
-                    reveals underneath. Contextual rather than a permanent row, since
-                    it's irrelevant the rest of the time. */}
-                {state.imageMask !== 'none' && (
-                  <Row label="Mask color">
-                    <ColorSwatch value={state.maskColor} onChange={v => set({ maskColor: v })} />
-                  </Row>
-                )}
-                <div style={{ height: 1, background: T.border }} />
-              </>
-            )}
             <div>
-              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Atmosphere</p>
-              <PatternGrid options={ATMOSPHERES} value={state.atmosphereStyle}
-                onChange={v => set({ atmosphereStyle: v as AtmosphereStyle })} columns={3} compact />
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Filter</p>
+              <PatternGrid options={FILTERS} value={state.imageFilter}
+                onChange={v => set({ imageFilter: v as ImageFilter })} columns={3} />
             </div>
-            {state.atmosphereStyle !== 'none' && (
+            {(state.imageFilter === 'tint' || state.imageFilter === 'duotone') && (
+              <Row label="Tint color">
+                <ColorSwatch value={state.tintColor} onChange={v => set({ tintColor: v })} />
+              </Row>
+            )}
+            <Row label="Blur">
+              <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
+                onChange={v => set({ imageBlur: v })} />
+            </Row>
+            <Row label="Opacity">
+              <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}
+                onChange={v => set({ imageOpacity: v / 100 })} />
+            </Row>
+            <div>
+              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Mask</p>
+              <PatternGrid options={MASKS} value={state.imageMask}
+                onChange={v => set({ imageMask: v as ImageMask })} columns={3} />
+            </div>
+            {/* Only shown when a mask is active — this is the color the fade
+                reveals underneath. Contextual rather than a permanent row, since
+                it's irrelevant the rest of the time. */}
+            {state.imageMask !== 'none' && (
+              <Row label="Mask color">
+                <ColorSwatch value={state.maskColor} onChange={v => set({ maskColor: v })} />
+              </Row>
+            )}
+
+            {/* Atmosphere — hidden for now, parked for a later build */}
+            {false && (
               <>
-                <Row label="Color 1">
-                  <ColorSwatch value={state.meshColors.color1}
-                    onChange={v => set({ meshColors: { ...state.meshColors, color1: v } })} />
-                </Row>
-                <Row label="Color 2">
-                  <ColorSwatch value={state.meshColors.color2}
-                    onChange={v => set({ meshColors: { ...state.meshColors, color2: v } })} />
-                </Row>
-                <Row label="Color 3">
-                  <ColorSwatch value={state.meshColors.color3}
-                    onChange={v => set({ meshColors: { ...state.meshColors, color3: v } })} />
-                </Row>
-                <Row label="Speed">
-                  <HwSegment
-                    options={[{ id:'slow',label:'Slow' },{ id:'normal',label:'Normal' },{ id:'fast',label:'Fast' }]}
-                    value={state.meshSpeed} onChange={v => set({ meshSpeed: v as typeof state.meshSpeed })}
-                  />
-                </Row>
-                {/* Lets an atmosphere effect sit behind/blend with an uploaded
-                    photo instead of only working as a standalone background. */}
-                <Row label="Opacity">
-                  <HwSlider value={Math.round((state.effectsOpacity ?? 1) * 100)} min={0} max={100}
-                    onChange={v => set({ effectsOpacity: v / 100 })} />
-                </Row>
+                <div style={{ height: 1, background: T.border }} />
+                <div>
+                  <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Atmosphere</p>
+                  <PatternGrid options={ATMOSPHERES} value={state.atmosphereStyle}
+                    onChange={v => set({ atmosphereStyle: v as AtmosphereStyle })} columns={3} compact />
+                </div>
+                {state.atmosphereStyle !== 'none' && (
+                  <>
+                    <Row label="Color 1">
+                      <ColorSwatch value={state.meshColors.color1}
+                        onChange={v => set({ meshColors: { ...state.meshColors, color1: v } })} />
+                    </Row>
+                    <Row label="Color 2">
+                      <ColorSwatch value={state.meshColors.color2}
+                        onChange={v => set({ meshColors: { ...state.meshColors, color2: v } })} />
+                    </Row>
+                    <Row label="Color 3">
+                      <ColorSwatch value={state.meshColors.color3}
+                        onChange={v => set({ meshColors: { ...state.meshColors, color3: v } })} />
+                    </Row>
+                    <Row label="Speed">
+                      <HwSegment
+                        options={[{ id:'slow',label:'Slow' },{ id:'normal',label:'Normal' },{ id:'fast',label:'Fast' }]}
+                        value={state.meshSpeed} onChange={v => set({ meshSpeed: v as typeof state.meshSpeed })}
+                      />
+                    </Row>
+                    {/* Lets an atmosphere effect sit behind/blend with an uploaded
+                        photo instead of only working as a standalone background. */}
+                    <Row label="Opacity">
+                      <HwSlider value={Math.round((state.effectsOpacity ?? 1) * 100)} min={0} max={100}
+                        onChange={v => set({ effectsOpacity: v / 100 })} />
+                    </Row>
+                  </>
+                )}
               </>
             )}
           </HardwarePanel>

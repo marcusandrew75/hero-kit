@@ -263,7 +263,8 @@ const App: React.FC = () => {
               <PreviewOverlay layout={previewLayout} font={previewFont} theme={previewTheme}
                 copy={previewCopy} onCopyChange={handlePreviewCopyChange}
                 logo={previewLogo} onLogoChange={handlePreviewLogoChange}
-                hidden={previewHidden} onHide={handlePreviewHide} />
+                hidden={previewHidden} onHide={handlePreviewHide}
+                navInset={aspectRatio === 'free'} />
             </div>
           )}
         </div>

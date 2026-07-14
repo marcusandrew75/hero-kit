@@ -22,9 +22,12 @@ interface Props {
   onLogoChange?: (dataUrl: string | null) => void;
   // Elements removed from the mock entirely (hover ✕, like the logo slot) —
   // flex-column layouts collapse the freed space automatically. Restored via
-  // the toolbar reset. Headline/primary CTA aren't hideable: no hero without them.
+  // the toolbar reset. Only the headline isn't hideable: no hero without one.
   hidden?: PreviewCopyField[];
   onHide?: (field: PreviewCopyField) => void;
+  // In Free ratio the canvas fills the whole area, putting the mock's nav
+  // underneath the app's floating ratio selector — this nudges it clear.
+  navInset?: boolean;
 }
 
 // Applied only to the headline — nav/buttons stay sans, matching how real
@@ -132,7 +135,7 @@ const EditStyles: React.FC<{ pal: Pal }> = ({ pal }) => (
     .pv-logo:hover { outline-color: ${pal.editOutline}; }
     .pv-logo .pv-logo-x { opacity: 0; transition: opacity .15s ease; }
     .pv-logo:hover .pv-logo-x { opacity: 1; }
-    .pv-hideable { position: relative; }
+    .pv-hideable { position: relative; pointer-events: auto; }
     .pv-hide-x { position: absolute; top: -8px; right: -8px; width: 16px; height: 16px; border-radius: 50%;
       font-size: 9px; line-height: 1; display: flex; align-items: center; justify-content: center;
       opacity: 0; transition: opacity .15s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.3); border: none; cursor: pointer; }
@@ -212,14 +215,16 @@ type LayoutProps = {
   onLogoChange?: (dataUrl: string | null) => void;
   hidden: Set<PreviewCopyField>;
   onHide?: (field: PreviewCopyField) => void;
+  navInset?: boolean;
 };
 
-const Nav: React.FC<LayoutProps> = ({ pal, copy, onCopyChange, logo, onLogoChange, hidden, onHide }) => (
+const Nav: React.FC<LayoutProps> = ({ pal, copy, onCopyChange, logo, onLogoChange, hidden, onHide, navInset }) => (
   // px-[8%] matches the headline content blocks' inset (see Left/Right layouts
   // below) — keeps logo and CTA aligned with the main title, and pulls them in
   // from the raw edge so they don't collide with the app's fixed corner UI
   // (Eye / Fullscreen icon buttons sit at that same top-right corner).
-  <div className="absolute top-0 inset-x-0 flex items-center justify-between px-[8%] py-6 z-10">
+  <div className="absolute inset-x-0 flex items-center justify-between px-[8%] py-6 z-10"
+    style={{ top: navInset ? 44 : 0 }}>
     <div className="flex items-center gap-2.5">
       <LogoSlot pal={pal} logo={logo} onLogoChange={onLogoChange} />
       {!hidden.has('brand') && (
@@ -249,10 +254,11 @@ const Nav: React.FC<LayoutProps> = ({ pal, copy, onCopyChange, logo, onLogoChang
 // crops…) instead of cramming the desktop nav into a phone-shaped frame —
 // the existing ratio selector doubles as the device switcher, no extra UI.
 
-const MobileLayout: React.FC<LayoutProps> = ({ font, pal, copy, onCopyChange, logo, onLogoChange, hidden, onHide }) => (
+const MobileLayout: React.FC<LayoutProps> = ({ font, pal, copy, onCopyChange, logo, onLogoChange, hidden, onHide, navInset }) => (
   <div className="absolute inset-0 flex flex-col pointer-events-none select-none">
     {/* Compact nav: logo + hamburger */}
-    <div className="absolute top-0 inset-x-0 flex items-center justify-between px-6 py-5 z-10">
+    <div className="absolute inset-x-0 flex items-center justify-between px-6 py-5 z-10"
+      style={{ top: navInset ? 44 : 0 }}>
       <div className="flex items-center gap-2">
         <LogoSlot pal={pal} logo={logo} onLogoChange={onLogoChange} />
         {!hidden.has('brand') && (
@@ -271,7 +277,7 @@ const MobileLayout: React.FC<LayoutProps> = ({ font, pal, copy, onCopyChange, lo
     <div className="flex-1 flex flex-col justify-center px-6 gap-5">
       {!hidden.has('eyebrow') && (
         <p className="pv-hideable self-start text-[10px] tracking-[0.2em] uppercase font-semibold" style={{ color: pal.dim }}>
-          ✦ &nbsp;<EditableText field="eyebrow" fallback="The Platform for Creators" copy={copy} onCopyChange={onCopyChange} />
+          ✦ &nbsp;<EditableText field="eyebrow" fallback="New · Product Launch" copy={copy} onCopyChange={onCopyChange} />
           <HideX field="eyebrow" onHide={onHide} pal={pal} />
         </p>
       )}
@@ -313,7 +319,7 @@ const LeftLayout: React.FC<LayoutProps> = (p) => (
     <div className="flex-1 flex flex-col justify-center px-[8%] gap-6 max-w-[55%]">
       {!p.hidden.has('eyebrow') && (
         <p className="pv-hideable self-start text-[11px] tracking-[0.22em] uppercase font-semibold" style={{ color: p.pal.dim }}>
-          ✦ &nbsp;<EditableText field="eyebrow" fallback="The Platform for Creators" copy={p.copy} onCopyChange={p.onCopyChange} />
+          ✦ &nbsp;<EditableText field="eyebrow" fallback="New · Product Launch" copy={p.copy} onCopyChange={p.onCopyChange} />
           <HideX field="eyebrow" onHide={p.onHide} pal={p.pal} />
         </p>
       )}
@@ -321,11 +327,11 @@ const LeftLayout: React.FC<LayoutProps> = (p) => (
         className="text-[clamp(2.2rem,5.5cqw,5.5rem)] font-semibold leading-[1.05] tracking-tight"
         style={{ color: p.pal.text, textShadow: p.pal.headlineShadow, ...headlineFont(p.font) }}
       >
-        <EditableText field="headline" fallback={'Design that\ndrives results.'} copy={p.copy} onCopyChange={p.onCopyChange} />
+        <EditableText field="headline" fallback={'Ideas that move\nthe world forward.'} copy={p.copy} onCopyChange={p.onCopyChange} />
       </h1>
       {!p.hidden.has('sub') && (
         <p className="pv-hideable self-start text-[clamp(0.9rem,1.2cqw,1.15rem)] leading-relaxed max-w-sm" style={{ color: p.pal.muted }}>
-          <EditableText field="sub" fallback="We help ambitious brands turn their ideas into high-performing digital experiences." copy={p.copy} onCopyChange={p.onCopyChange} />
+          <EditableText field="sub" fallback="Build, ship, and scale without limits. The platform built for ambitious creators." copy={p.copy} onCopyChange={p.onCopyChange} />
           <HideX field="sub" onHide={p.onHide} pal={p.pal} />
         </p>
       )}
@@ -333,14 +339,14 @@ const LeftLayout: React.FC<LayoutProps> = (p) => (
         {!p.hidden.has('primaryCta') && (
           <button className="pv-hideable px-6 py-3 rounded-lg font-semibold text-sm shadow-lg"
             style={{ background: p.pal.btnBg, color: p.pal.btnText }}>
-            <EditableText field="primaryCta" fallback="Start Your Project" copy={p.copy} onCopyChange={p.onCopyChange} />
+            <EditableText field="primaryCta" fallback="Start for free" copy={p.copy} onCopyChange={p.onCopyChange} />
             <HideX field="primaryCta" onHide={p.onHide} pal={p.pal} />
           </button>
         )}
         {!p.hidden.has('secondaryCta') && (
           <button className="pv-hideable font-semibold text-sm underline underline-offset-4"
             style={{ color: p.pal.strong, textDecorationColor: p.pal.underline }}>
-            <EditableText field="secondaryCta" fallback="See Our Work →" copy={p.copy} onCopyChange={p.onCopyChange} />
+            <EditableText field="secondaryCta" fallback="See how it works" copy={p.copy} onCopyChange={p.onCopyChange} />
             <HideX field="secondaryCta" onHide={p.onHide} pal={p.pal} />
           </button>
         )}
@@ -402,7 +408,7 @@ const RightLayout: React.FC<LayoutProps> = (p) => (
     <div className="flex-1 flex flex-col justify-center items-end px-[8%] gap-6 ml-auto max-w-[55%] text-right">
       {!p.hidden.has('eyebrow') && (
         <p className="pv-hideable self-end text-[11px] tracking-[0.22em] uppercase font-semibold" style={{ color: p.pal.dim }}>
-          <EditableText field="eyebrow" fallback="The Platform for Creators" copy={p.copy} onCopyChange={p.onCopyChange} /> &nbsp;✦
+          <EditableText field="eyebrow" fallback="New · Product Launch" copy={p.copy} onCopyChange={p.onCopyChange} /> &nbsp;✦
           <HideX field="eyebrow" onHide={p.onHide} pal={p.pal} />
         </p>
       )}
@@ -410,11 +416,11 @@ const RightLayout: React.FC<LayoutProps> = (p) => (
         className="text-[clamp(2.2rem,5.5cqw,5.5rem)] font-semibold leading-[1.05] tracking-tight"
         style={{ color: p.pal.text, textShadow: p.pal.headlineShadow, ...headlineFont(p.font) }}
       >
-        <EditableText field="headline" fallback={'Your brand.\nBeautifully built.'} copy={p.copy} onCopyChange={p.onCopyChange} />
+        <EditableText field="headline" fallback={'Ideas that move\nthe world forward.'} copy={p.copy} onCopyChange={p.onCopyChange} />
       </h1>
       {!p.hidden.has('sub') && (
         <p className="pv-hideable self-end text-[clamp(0.9rem,1.2cqw,1.15rem)] leading-relaxed max-w-sm" style={{ color: p.pal.muted }}>
-          <EditableText field="sub" fallback="Premium digital experiences for forward-thinking teams who refuse to settle." copy={p.copy} onCopyChange={p.onCopyChange} />
+          <EditableText field="sub" fallback="Build, ship, and scale without limits. The platform built for ambitious creators." copy={p.copy} onCopyChange={p.onCopyChange} />
           <HideX field="sub" onHide={p.onHide} pal={p.pal} />
         </p>
       )}
@@ -422,14 +428,14 @@ const RightLayout: React.FC<LayoutProps> = (p) => (
         {!p.hidden.has('primaryCta') && (
           <button className="pv-hideable px-6 py-3 rounded-lg font-semibold text-sm shadow-lg"
             style={{ background: p.pal.btnBg, color: p.pal.btnText }}>
-            <EditableText field="primaryCta" fallback="Get Started" copy={p.copy} onCopyChange={p.onCopyChange} />
+            <EditableText field="primaryCta" fallback="Start for free" copy={p.copy} onCopyChange={p.onCopyChange} />
             <HideX field="primaryCta" onHide={p.onHide} pal={p.pal} />
           </button>
         )}
         {!p.hidden.has('secondaryCta') && (
           <button className="pv-hideable font-semibold text-sm underline underline-offset-4"
             style={{ color: p.pal.strong, textDecorationColor: p.pal.underline }}>
-            <EditableText field="secondaryCta" fallback="See Our Work →" copy={p.copy} onCopyChange={p.onCopyChange} />
+            <EditableText field="secondaryCta" fallback="See how it works" copy={p.copy} onCopyChange={p.onCopyChange} />
             <HideX field="secondaryCta" onHide={p.onHide} pal={p.pal} />
           </button>
         )}
@@ -445,7 +451,7 @@ const RightLayout: React.FC<LayoutProps> = (p) => (
 // fixed pixel width — a 9:16 box on a large display is still a phone.
 const MOBILE_BREAKPOINT = 620;
 
-const PreviewOverlay = ({ layout, font = 'sans', theme = 'light', copy = {}, onCopyChange, logo, onLogoChange, hidden = [], onHide }: Props) => {
+const PreviewOverlay = ({ layout, font = 'sans', theme = 'light', copy = {}, onCopyChange, logo, onLogoChange, hidden = [], onHide, navInset = false }: Props) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -461,7 +467,7 @@ const PreviewOverlay = ({ layout, font = 'sans', theme = 'light', copy = {}, onC
   }, []);
 
   const pal = palette(theme);
-  const props: LayoutProps = { font, pal, copy, onCopyChange, logo, onLogoChange, hidden: new Set(hidden), onHide };
+  const props: LayoutProps = { font, pal, copy, onCopyChange, logo, onLogoChange, hidden: new Set(hidden), onHide, navInset };
 
   return (
     <div ref={rootRef} className="absolute inset-0" style={{ containerType: 'inline-size' }}>

@@ -141,8 +141,8 @@ const TeamsPage: React.FC = () => {
 
         <div className="grid md:grid-cols-3 gap-4 mt-10">
           {[
-            ['1', 'We install your brand.', 'Your colours, type, logo and rules, built into HeroKit.'],
-            ['2', 'Your team ships.', 'On-brand heroes in minutes. No briefs, no waiting.'],
+            ['1', 'We install your brand.', 'Your palette, logo, type and a set of saved Looks, dialled into HeroKit.'],
+            ['2', 'Your team ships.', 'On-brand hero backgrounds in minutes. No briefs, no waiting.'],
             ['3', 'We keep it growing.', 'The system evolves as your brand does.'],
           ].map(([n, title, body], i) => (
             <div key={n} className="control-panel landing-reveal" style={{ padding: '22px 20px', transitionDelay: `${i * 0.08}s` }}>
@@ -158,17 +158,16 @@ const TeamsPage: React.FC = () => {
       {/* ── 4 · It's not just heroes ─────────────────────────────────────── */}
       <section className="max-w-6xl mx-auto px-6 pb-24 md:pb-32">
         <div className="landing-reveal">
-          <SectionTag number="03" label="It's not just heroes" />
+          <SectionTag number="03" label="One look, every shape" />
           <h2 className="text-[26px] md:text-[38px] font-bold leading-tight mt-5 mb-4 max-w-3xl" style={GROTESK}>
-            A hero is your brand applied to a canvas — so the same engine runs
-            everything shaped like one.
+            The same look, at every shape you ship.
           </h2>
           <p className="text-[15px] md:text-[16px] leading-relaxed mb-8 max-w-2xl" style={{ color: T.muted }}>
-            Share images, social headers, email banners, ad creative, deck covers.
-            The hero's just the flagship.
+            Compose once, export at any ratio — desktop hero, square social, story, ultrawide.
+            The treatment stays locked to your brand whatever the frame.
           </p>
           <div className="flex flex-wrap gap-2">
-            {['Share images', 'Social headers', 'Email banners', 'Ad creative', 'Deck covers'].map((name, i) => (
+            {['16:9 Desktop hero', '1:1 Square social', '9:16 Story', '21:9 Ultrawide', '4:3 Classic'].map((name, i) => (
               <span key={name}
                 className="inline-flex items-center gap-2 px-3 py-[7px] rounded-lg text-[12px] font-semibold"
                 style={{
@@ -197,7 +196,7 @@ const TeamsPage: React.FC = () => {
               heading: 'We install your brand as a tool your team keeps forever.',
               items: [
                 'Your colours, type, logo and rules, configured',
-                'A starter set of on-brand hero templates',
+                'A set of saved Looks, tuned to your brand',
                 'Your whole team self-serves, no design skills needed',
                 'Live in about a week',
               ],
@@ -205,12 +204,12 @@ const TeamsPage: React.FC = () => {
             },
             {
               tag: 'Asset Engine · monthly',
-              heading: 'We run your on-brand surface, so you never brief a landing page again.',
+              heading: 'New hero backgrounds, on tap — for every launch.',
               items: [
                 'Everything in Brand Setup, plus:',
-                'New heroes and campaign variants, on tap',
-                'The same engine extended to social, email, ads and decks',
-                'Refreshes as your brand evolves',
+                'Fresh on-brand backgrounds for each launch, campaign and ICP',
+                'New Looks added as your brand grows',
+                'A creative director on tap — not a template',
               ],
               footer: 'For teams shipping at volume.',
             },

@@ -86,12 +86,16 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </div>
         </div>
         <div className="flex items-center gap-5">
-          <a href="/teams" className="text-[13px] font-semibold transition-colors"
-            style={{ color: T.muted }}
-            onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-            onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-            For Teams
-          </a>
+          {/* For Teams — hidden for now, not ready to showcase it yet.
+              /teams itself is untouched, just not linked from here. */}
+          {false && (
+            <a href="/teams" className="text-[13px] font-semibold transition-colors"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              For Teams
+            </a>
+          )}
           <OpenCta onOpen={onOpen} small />
         </div>
       </header>

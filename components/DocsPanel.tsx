@@ -178,6 +178,7 @@ const CHANGELOG: ChangeEntry[] = [
       'Added: an eye icon on Layer 2/3 to actually hide the layer from the render (and export) without deleting it — separate from expanding/collapsing the card, which is now a plain caret',
       'Improved: layer delete is now a trash icon instead of an X, so it reads unambiguously as destructive',
       'Improved: the Source panel now shows a large thumbnail of the loaded image/video with hover Change/Clear, instead of a dropzone that kept saying "Drop or click to upload" even after you\'d already loaded one',
+      'Added: hovering a gallery or Pexels thumbnail now shows a large, un-cropped preview beside the sidebar — much easier to judge a shot before picking it than the tiny cropped squares alone',
     ],
   },
   {

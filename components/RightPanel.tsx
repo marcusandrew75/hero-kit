@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { BUILT_IN_PRESETS } from '../presets';
 import { toPng, toJpeg } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
@@ -16,6 +17,49 @@ import {
 } from '../types';
 
 // ─── Local primitives ────────────────────────────────────────────────────────
+
+// ─── Thumbnail hover preview ─────────────────────────────────────────────────
+// The gallery/Pexels grids show tiny 48-64px center-cropped squares, which
+// makes it hard to judge composition when browsing. Hovering a thumb shows a
+// much larger, un-cropped preview floating to the left of the sidebar.
+// Portaled to document.body since the sidebar's own wrapper has a
+// `transform: translateZ(0)` (App.tsx) which creates a containing block for
+// `position: fixed` descendants — same reason DocsPanel is portaled.
+const THUMB_PREVIEW_MAX = 260;   // px, both width and height cap
+const THUMB_PREVIEW_GAP = 322;   // px from viewport right edge — sidebar width (310) + margin
+
+interface ThumbHover { src: string; top: number; }
+
+/** Per-grid hover state: call bind(src) on a thumb's onMouseEnter/onMouseLeave. */
+const useThumbHover = () => {
+  const [hover, setHover] = useState<ThumbHover | null>(null);
+  const timerRef = useRef<number>();
+  const onEnter = (src: string) => (e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const centerY = rect.top + rect.height / 2;
+    const top = Math.max(12, Math.min(window.innerHeight - 12 - THUMB_PREVIEW_MAX, centerY - THUMB_PREVIEW_MAX / 2));
+    clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setHover({ src, top }), 120);
+  };
+  const onLeave = () => { clearTimeout(timerRef.current); setHover(null); };
+  return { hover, onEnter, onLeave };
+};
+
+const ThumbHoverPreview: React.FC<{ hover: ThumbHover | null }> = ({ hover }) => {
+  if (!hover) return null;
+  return createPortal(
+    <div className="fixed z-[300] pointer-events-none rounded-xl border p-1.5"
+      style={{
+        right: THUMB_PREVIEW_GAP, top: hover.top,
+        background: T.surface, borderColor: T.border,
+        boxShadow: '0 12px 32px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15)',
+      }}>
+      <img src={hover.src} alt=""
+        style={{ display: 'block', maxWidth: THUMB_PREVIEW_MAX, maxHeight: THUMB_PREVIEW_MAX, width: 'auto', height: 'auto', borderRadius: 8 }} />
+    </div>,
+    document.body,
+  );
+};
 
 /** Light-themed horizontal range slider with accent-coloured fill track + LCD readout. */
 const HwSlider: React.FC<{
@@ -182,7 +226,7 @@ const QUICK_SEARCHES  = ['Landscape', 'Atmospheric', 'Cinematic', 'Cosmic', 'Abs
 
 interface PexelsPhoto {
   id: number; alt: string; photographer: string;
-  src: { small: string; large2x: string };
+  src: { small: string; medium: string; large2x: string };
 }
 
 // ─── Gallery section ─────────────────────────────────────────────────────────
@@ -199,6 +243,7 @@ const GallerySection: React.FC<{
   const [hasMore, setHasMore]   = useState(false);
   const [searching, setSearching] = useState(false);
   const [lastQuery, setLastQuery] = useState('');
+  const { hover, onEnter, onLeave } = useThumbHover();
 
   const fetchPexels = async (q: string, pg: number) => {
     if (!q.trim()) return;
@@ -280,6 +325,7 @@ const GallerySection: React.FC<{
           <div className="grid grid-cols-4 gap-1.5">
             {visible.map(item => (
               <button key={item.src} onClick={() => onChange({ imageUrl: item.src, videoUrl: undefined })}
+                onMouseEnter={onEnter(item.src)} onMouseLeave={onLeave}
                 className={thumbCls(imageUrl === item.src)}>
                 <img src={item.thumb} alt="" width={64} height={64} className="w-full h-full object-cover" loading="eager" decoding="async" />
                 {imageUrl === item.src && <div className="absolute inset-0 bg-black/10" />}
@@ -334,6 +380,7 @@ const GallerySection: React.FC<{
               {results.map(photo => (
                 <button key={photo.id}
                   onClick={() => onChange({ imageUrl: photo.src.large2x, videoUrl: undefined })}
+                  onMouseEnter={onEnter(photo.src.medium)} onMouseLeave={onLeave}
                   title={`${photo.alt || 'Photo'} · ${photo.photographer}`}
                   className={thumbCls(imageUrl === photo.src.large2x)}>
                   <img src={photo.src.small} alt={photo.alt || ''} width={64} height={64}
@@ -359,6 +406,7 @@ const GallerySection: React.FC<{
           )}
         </>
       )}
+      <ThumbHoverPreview hover={hover} />
     </div>
   );
 };
@@ -379,12 +427,13 @@ const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
 const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) => {
   const [tab, setTab]       = useState<'curated'|'pexels'>('curated');
   const [query, setQuery]   = useState('');
-  const [results, setResults] = useState<{ id: number; src: { small: string; large2x: string } }[]>([]);
+  const [results, setResults] = useState<{ id: number; src: { small: string; medium: string; large2x: string } }[]>([]);
   const [searching, setSearching] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [page, setPage]     = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [lastQuery, setLastQuery] = useState('');
+  const { hover, onEnter, onLeave } = useThumbHover();
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -399,7 +448,7 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
     try {
       const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=12&page=${pg}&orientation=landscape`, { headers: { Authorization: PEXELS_KEY } });
       const data = await res.json();
-      const photos: { id: number; src: { small: string; large2x: string } }[] = data.photos ?? [];
+      const photos: { id: number; src: { small: string; medium: string; large2x: string } }[] = data.photos ?? [];
       setResults(pg === 1 ? photos : prev => [...prev, ...photos]);
       setHasMore(photos.length === 12);
       setLastQuery(q); setPage(pg);
@@ -461,6 +510,7 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
           <div className="grid grid-cols-4 gap-1">
             {(expanded ? GALLERY : GALLERY.slice(0, GALLERY_INITIAL)).map(item => (
               <button key={item.src} onClick={() => onPick(item.src)}
+                onMouseEnter={onEnter(item.src)} onMouseLeave={onLeave}
                 className="aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-[#b8b4aa] transition-all">
                 <img src={item.thumb} alt="" width={48} height={48} className="w-full h-full object-cover"
                   loading={expanded ? 'lazy' : 'eager'} decoding="async" />
@@ -501,6 +551,7 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
             <div className="grid grid-cols-4 gap-1">
               {results.map(p => (
                 <button key={p.id} onClick={() => onPick(p.src.large2x)}
+                  onMouseEnter={onEnter(p.src.medium)} onMouseLeave={onLeave}
                   className="aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-[#b8b4aa] transition-all">
                   <img src={p.src.small} alt="" width={48} height={48} className="w-full h-full object-cover" />
                 </button>
@@ -519,6 +570,7 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
           )}
         </div>
       )}
+      <ThumbHoverPreview hover={hover} />
     </div>
   );
 };

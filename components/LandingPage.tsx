@@ -21,7 +21,7 @@ import {
 //   in-context.jpg                    Preview in Context over the canvas (wide)
 //   screen-sizes.jpg                  ratio selector toolbar (natural height)
 //   marc.jpg                          square portrait for the bio section
-//   vlad.jpg · wes.jpg                testimonial avatars (square)
+//   vlad.jpg · wes.jpg · florent.jpg   testimonial avatars (square)
 
 /** The one CTA that matters — reuses the tool's own hardware button style. */
 const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, small }) => (
@@ -393,14 +393,14 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </h2>
         </div>
 
-        <div className="grid md:grid-cols-5 gap-4 md:gap-5 items-stretch">
-          {/* Vlad — the long quote carries the section, so it gets 3 of 5 columns */}
-          <figure className="control-panel landing-reveal md:col-span-3 flex flex-col justify-between"
+        <div className="grid md:grid-cols-3 gap-4 md:gap-5 items-stretch">
+          {/* Vlad — the long quote, so it leads */}
+          <figure className="control-panel landing-reveal flex flex-col justify-between"
             style={{ padding: '34px 30px 28px', transform: 'rotate(-0.4deg)' }}>
             <div>
               <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
                 style={{ ...GROTESK, color: T.accent }}>“</span>
-              <blockquote className="text-[22px] md:text-[28px] font-bold leading-snug" style={GROTESK}>
+              <blockquote className="text-[20px] md:text-[22px] font-bold leading-snug" style={GROTESK}>
                 The tool is among <span style={{ color: T.accent }}>3 really useful</span> visual modificators I've encountered —
                 usually it's just a waste of time, so thank you!
               </blockquote>
@@ -409,35 +409,75 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
               <Avatar src="/landing/vlad.jpg" alt="Vlad Arbatov" initial="V" />
               <div className="flex flex-col gap-[2px]">
                 <span className="text-[13px] font-bold" style={GROTESK}>Vlad Arbatov</span>
+                <a href="https://x.com/vladzima" target="_blank" rel="noreferrer"
+                  className="text-[11px] underline underline-offset-2 transition-colors w-fit"
+                  style={{ color: T.muted }}
+                  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@vladzima</a>
                 <span className="text-[11px]" style={{ color: T.dim }}>
-                  Founding Engineer, Loyal · ex-Yandex, Mapbox ·{' '}
-                  <a href="https://x.com/vladzima" target="_blank" rel="noreferrer"
+                  Founding Engineer, Loyal · ex-Yandex, Mapbox
+                </span>
+              </div>
+            </figcaption>
+          </figure>
+
+          {/* Florent — a punchy one-liner */}
+          <figure className="control-panel landing-reveal flex flex-col justify-between"
+            style={{ padding: '34px 30px 28px', transform: 'rotate(0.3deg)', transitionDelay: '0.05s' }}>
+            <div>
+              <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
+                style={{ ...GROTESK, color: T.accent }}>“</span>
+              <blockquote className="text-[26px] md:text-[29px] font-bold leading-snug" style={GROTESK}>
+                Absolute <span style={{ color: T.accent }}>banger</span> for quick edits, insane what you can do!
+              </blockquote>
+            </div>
+            <figcaption className="flex items-center gap-3 mt-8">
+              <Avatar src="/landing/florent.jpg" alt="Florent" initial="F" />
+              <div className="flex flex-col gap-[2px]">
+                <span className="text-[13px] font-bold" style={GROTESK}>Florent</span>
+                <a href="https://x.com/HeyFlorent" target="_blank" rel="noreferrer"
+                  className="text-[11px] underline underline-offset-2 transition-colors w-fit"
+                  style={{ color: T.muted }}
+                  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@HeyFlorent</a>
+                <span className="text-[11px]" style={{ color: T.dim }}>
+                  Founder &amp; Design Director,{' '}
+                  <a href="https://x.com/stunbound" target="_blank" rel="noreferrer"
                     className="underline underline-offset-2 transition-colors"
                     style={{ color: T.muted }}
                     onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-                    onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@vladzima</a>
+                    onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@stunbound</a> &amp;{' '}
+                  <a href="https://x.com/getsuperstocks" target="_blank" rel="noreferrer"
+                    className="underline underline-offset-2 transition-colors"
+                    style={{ color: T.muted }}
+                    onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                    onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@getsuperstocks</a>
                 </span>
               </div>
             </figcaption>
           </figure>
 
           {/* Wes — four words, so run them huge like a stamp */}
-          <figure className="control-panel landing-reveal md:col-span-2 flex flex-col justify-between"
+          <figure className="control-panel landing-reveal flex flex-col justify-between"
             style={{ padding: '34px 30px 28px', transform: 'rotate(0.5deg)', transitionDelay: '0.1s' }}>
-            <blockquote className="text-[40px] md:text-[52px] font-bold leading-[1.05]" style={GROTESK}>
-              Sick!<br />HeroKit<br />is <span style={{ color: T.accent }}>rad.</span>
-            </blockquote>
+            <div>
+              <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
+                style={{ ...GROTESK, color: T.accent }}>“</span>
+              <blockquote className="text-[34px] md:text-[38px] font-bold leading-[1.05]" style={GROTESK}>
+                Sick!<br />HeroKit<br />is <span style={{ color: T.accent }}>rad.</span>
+              </blockquote>
+            </div>
             <figcaption className="flex items-center gap-3 mt-8">
               <Avatar src="/landing/wes.jpg" alt="Wes Bancroft" initial="W" />
               <div className="flex flex-col gap-[2px]">
                 <span className="text-[13px] font-bold" style={GROTESK}>Wes</span>
+                <a href="https://x.com/WesleyBancroft" target="_blank" rel="noreferrer"
+                  className="text-[11px] underline underline-offset-2 transition-colors w-fit"
+                  style={{ color: T.muted }}
+                  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@WesleyBancroft</a>
                 <span className="text-[11px]" style={{ color: T.dim }}>
-                  Brand, Lunour.com ·{' '}
-                  <a href="https://x.com/WesleyBancroft" target="_blank" rel="noreferrer"
-                    className="underline underline-offset-2 transition-colors"
-                    style={{ color: T.muted }}
-                    onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-                    onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@WesleyBancroft</a>
+                  Brand, Lunour.com
                 </span>
               </div>
             </figcaption>

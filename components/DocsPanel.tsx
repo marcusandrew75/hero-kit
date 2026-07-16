@@ -170,6 +170,17 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.5', date: '16 Jul 2026',
+    items: [
+      'Added: flip horizontal/vertical for the primary image and each of Layer 2/3, independently',
+      'Added: free rotation for Layer 2/3 — drag the handle above the layer to spin it to any angle (hold Shift to snap to 15° steps, double-click to reset)',
+      'Added: resize handles on all four corners of a layer\'s box, not just the bottom-right — resize from whichever corner is convenient',
+      'Added: an eye icon on Layer 2/3 to actually hide the layer from the render (and export) without deleting it — separate from expanding/collapsing the card, which is now a plain caret',
+      'Improved: layer delete is now a trash icon instead of an X, so it reads unambiguously as destructive',
+      'Improved: the Source panel now shows a large thumbnail of the loaded image/video with hover Change/Clear, instead of a dropzone that kept saying "Drop or click to upload" even after you\'d already loaded one',
+    ],
+  },
+  {
     version: '3.4', date: '15 Jul 2026',
     items: [
       'Added: reposition and resize Layer 2/3 directly on the canvas — click "Move / Resize" on a layer, drag it into place, drag the corner handle to resize (locked to the image\'s own aspect ratio). Previously every layer was locked to full-bleed cover with no way to tuck a second image alongside the primary one',

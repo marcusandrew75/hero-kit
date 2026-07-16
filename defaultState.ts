@@ -12,6 +12,8 @@ export const DEFAULT: BackgroundState = {
   imageBlur: 0,
   imageMask: 'none',
   imageOpacity: 1,
+  imageFlipH: false,
+  imageFlipV: false,
   tintColor: '#6366f1',
   chromaticAberration: 0,
   ditherStyle: 'none',

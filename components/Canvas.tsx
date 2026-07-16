@@ -2096,6 +2096,8 @@ const applySpotBlur = (
 
 interface ProcessedImageProps {
   imageUrl: string;
+  imageFlipH: boolean;
+  imageFlipV: boolean;
   colorGradeEnabled: boolean;
   colorGradePreset: GradePreset;
   colorGradeStrength: number;
@@ -2182,7 +2184,7 @@ interface ProcessedImageProps {
 
 const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
   const {
-    imageUrl, layers,
+    imageUrl, imageFlipH, imageFlipV, layers,
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
@@ -2244,14 +2246,19 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           const off = document.createElement('canvas');
           off.width = w; off.height = h;
           const offCtx = off.getContext('2d')!;
+          offCtx.save();
+          offCtx.translate(w / 2, h / 2);
+          offCtx.scale(imageFlipH ? -1 : 1, imageFlipV ? -1 : 1);
+          offCtx.translate(-w / 2, -h / 2);
           drawObjectCover(offCtx, img, w, h);
+          offCtx.restore();
 
           // Blend additional layers on top — each rendered into its own
           // offscreen box first (so its eraser mask, if any, only ever
           // affects that layer's own pixels), then composited onto the main
           // buffer at its position with its blend mode + opacity.
           layers.filter(l => l.imageUrl).forEach((layer, i) => {
-            if (!layerImgs[i]) return;
+            if (!layerImgs[i] || layer.hidden) return;
             const lx = (layer.x ?? 0) * w, ly = (layer.y ?? 0) * h;
             const lw = (layer.width ?? 1) * w, lh = (layer.height ?? 1) * h;
 
@@ -2288,10 +2295,20 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
               lCtx.putImageData(imgData, 0, 0);
             }
 
-            // Step 3: composite the (possibly masked) layer onto the main buffer
+            // Step 3: composite the (possibly masked) layer onto the main buffer.
+            // Rotate/flip happen only here, never while rendering into lCanvas
+            // above — the eraser pad shows the user the raw, untransformed
+            // image to paint against, and the mask alpha was just applied in
+            // that same untransformed space, so transforming any earlier would
+            // make painted strokes land on the wrong side of the buffer.
+            offCtx.save();
+            offCtx.translate(lx + lw / 2, ly + lh / 2);
+            if (layer.rotation) offCtx.rotate(layer.rotation * Math.PI / 180);
+            offCtx.scale(layer.flipH ? -1 : 1, layer.flipV ? -1 : 1);
             offCtx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
             offCtx.globalAlpha = layer.opacity;
-            offCtx.drawImage(lCanvas, lx, ly, lw, lh);
+            offCtx.drawImage(lCanvas, -lw / 2, -lh / 2, lw, lh);
+            offCtx.restore();
           });
           offCtx.globalCompositeOperation = 'source-over';
           offCtx.globalAlpha = 1;
@@ -2347,7 +2364,12 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
             console.warn('ProcessedImageCanvas error:', err);
             canvas.width = w; canvas.height = h;
             const ctx2 = canvas.getContext('2d')!;
+            ctx2.save();
+            ctx2.translate(w / 2, h / 2);
+            ctx2.scale(imageFlipH ? -1 : 1, imageFlipV ? -1 : 1);
+            ctx2.translate(-w / 2, -h / 2);
             drawObjectCover(ctx2, img, w, h);
+            ctx2.restore();
             setProcessing(false);
           }
         }, 0);
@@ -2359,7 +2381,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     ro.observe(wrap);
     return () => { cancelled = true; ro.disconnect(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageUrl, JSON.stringify(layers),
+  }, [imageUrl, imageFlipH, imageFlipV, JSON.stringify(layers),
       edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
       splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
@@ -2527,7 +2549,7 @@ interface CanvasProps {
 const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
   const {
     bgColor, maskColor, imageUrl, videoUrl,
-    imageFilter, imageBlur, imageMask, imageOpacity, tintColor, chromaticAberration,
+    imageFilter, imageBlur, imageMask, imageOpacity, imageFlipH, imageFlipV, tintColor, chromaticAberration,
     ditherStyle, ditherScale,
     ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
     ditherDuotoneLevels, ditherDuotoneInvert,
@@ -2570,7 +2592,10 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
     return (
       <div id="heroken-canvas" className="absolute inset-0 overflow-hidden" style={{ backgroundColor: bgColor }}>
         {videoUrl && <video src={videoUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />}
-        {imageUrl && !videoUrl && <img src={imageUrl} alt="" className="w-full h-full object-cover" />}
+        {imageUrl && !videoUrl && (
+          <img src={imageUrl} alt="" className="w-full h-full object-cover"
+            style={{ transform: `scaleX(${imageFlipH ? -1 : 1}) scaleY(${imageFlipV ? -1 : 1})` }} />
+        )}
       </div>
     );
   }
@@ -2665,6 +2690,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
               <div className="absolute inset-0" style={{ filter: cssFilter }}>
               <ProcessedImageCanvas
                 imageUrl={imageUrl}
+                imageFlipH={imageFlipH ?? false}
+                imageFlipV={imageFlipV ?? false}
                 colorGradeEnabled={colorGradeEnabled ?? false}
                 colorGradePreset={(colorGradePreset ?? 'teal-orange') as GradePreset}
                 colorGradeStrength={colorGradeStrength ?? 1}
@@ -2750,7 +2777,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
               />
               </div>
             ) : imageUrl ? (
-              <img src={imageUrl} alt="" crossOrigin="anonymous" className="w-full h-full object-cover" style={{ filter: cssFilter }} />
+              <img src={imageUrl} alt="" crossOrigin="anonymous" className="w-full h-full object-cover"
+                style={{ filter: cssFilter, transform: `scaleX(${imageFlipH ? -1 : 1}) scaleY(${imageFlipV ? -1 : 1})` }} />
             ) : null}
 
             {/* Tint / duotone colour overlay */}

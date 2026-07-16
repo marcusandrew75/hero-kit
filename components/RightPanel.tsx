@@ -562,32 +562,46 @@ const LayersSection: React.FC<{
       {layers.map((layer, i) => {
         const isCollapsed = !!collapsed[layer.id];
         const modeLabel = BLEND_MODES.find(m => m.id === layer.blendMode)?.label ?? layer.blendMode;
+        const isHidden = !!layer.hidden;
         return (
           <div key={layer.id} className="rounded-xl overflow-hidden border"
             style={{ borderColor: T.border, background: T.surface, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
             <div className="flex items-center gap-2 px-3 py-2 border-b" style={{ borderColor: T.border }}>
               {isCollapsed && layer.imageUrl && (
-                <div className="w-7 h-7 rounded overflow-hidden shrink-0">
+                <div className="w-7 h-7 rounded overflow-hidden shrink-0" style={{ opacity: isHidden ? 0.35 : 1 }}>
                   <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
                 </div>
               )}
               <span className="text-[11px] font-semibold flex-1" style={{ color: T.muted }}>
                 Layer {i + 2}
                 {isCollapsed && layer.imageUrl && (
-                  <span className="font-normal" style={{ color: T.dim }}> · {modeLabel} {Math.round(layer.opacity * 100)}%</span>
+                  <span className="font-normal" style={{ color: T.dim }}>
+                    {' '}· {modeLabel} {Math.round(layer.opacity * 100)}%{isHidden ? ' · Hidden' : ''}
+                  </span>
                 )}
               </span>
               {layer.imageUrl && (
-                <button onClick={() => toggle(layer.id)} className="text-[10px] transition-colors px-1" style={{ color: T.dim }}>
-                  {isCollapsed ? 'Show' : 'Hide'}
+                <button onClick={() => update(layer.id, { hidden: !layer.hidden })}
+                  title={isHidden ? 'Show layer' : 'Hide layer'}
+                  className="transition-colors px-1" style={{ color: isHidden ? T.dim : T.muted }}>
+                  <i className={`ph ${isHidden ? 'ph-eye-slash' : 'ph-eye'} text-sm`} />
                 </button>
               )}
-              <button onClick={() => remove(layer.id)} className="transition-colors ml-1 hover:text-red-500" style={{ color: T.border }}>
-                <i className="ph ph-x text-sm" />
+              {layer.imageUrl && (
+                <button onClick={() => toggle(layer.id)}
+                  title={isCollapsed ? 'Expand' : 'Collapse'}
+                  className="transition-colors px-1" style={{ color: T.dim }}>
+                  <i className={`ph ${isCollapsed ? 'ph-caret-down' : 'ph-caret-up'} text-sm`} />
+                </button>
+              )}
+              <button onClick={() => remove(layer.id)}
+                title="Delete layer"
+                className="transition-colors ml-1 hover:text-red-500" style={{ color: T.border }}>
+                <i className="ph ph-trash text-sm" />
               </button>
             </div>
             {!isCollapsed && (
-              <div className="p-3 space-y-3">
+              <div className="p-3 space-y-3" style={{ opacity: isHidden ? 0.5 : 1 }}>
                 {layer.imageUrl ? (
                   <div className="relative rounded-lg overflow-hidden h-20 group">
                     <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
@@ -650,6 +664,30 @@ const LayersSection: React.FC<{
                     <i className="ph ph-scissors text-sm" />
                     {erasing[layer.id] ? 'Done' : 'Cut Out / Erase'}
                   </button>
+                )}
+                {layer.imageUrl && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => update(layer.id, { flipH: !layer.flipH })}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                      style={
+                        layer.flipH
+                          ? { background: T.accent, color: '#fff' }
+                          : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                      }>
+                      <i className="ph ph-flip-horizontal text-sm" /> Flip H
+                    </button>
+                    <button
+                      onClick={() => update(layer.id, { flipV: !layer.flipV })}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                      style={
+                        layer.flipV
+                          ? { background: T.accent, color: '#fff' }
+                          : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                      }>
+                      <i className="ph ph-flip-vertical text-sm" /> Flip V
+                    </button>
+                  </div>
                 )}
                 {layer.imageUrl && erasing[layer.id] && (() => {
                   const keep = (layer.maskMode ?? 'keep') === 'keep';
@@ -1171,19 +1209,38 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             />
           )}
           {sourceMode === 'upload' ? (
-            <label
-              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-              onDragOver={e => e.preventDefault()}
-              className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
-              style={{ borderColor: T.border, color: T.muted }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = T.text}
-              onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
-            >
-              <i className="ph ph-upload-simple text-xl" />
-              <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
-              <input type="file" className="hidden" accept="image/*"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-            </label>
+            hasSource ? (
+              <div className="relative rounded-xl overflow-hidden h-32 group">
+                {state.videoUrl ? (
+                  <video src={state.videoUrl} muted loop autoPlay playsInline className="w-full h-full object-cover" />
+                ) : (
+                  <img src={state.imageUrl} alt="" className="w-full h-full object-cover" />
+                )}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <label className="cursor-pointer px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">
+                    Change
+                    <input type="file" accept="image/*,video/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                  </label>
+                  <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
+                    className="px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">Clear</button>
+                </div>
+              </div>
+            ) : (
+              <label
+                onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+                onDragOver={e => e.preventDefault()}
+                className="flex flex-col items-center justify-center gap-2 w-full h-[68px] rounded-xl border-2 border-dashed cursor-pointer transition-all"
+                style={{ borderColor: T.border, color: T.muted }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = T.text}
+                onMouseLeave={e => e.currentTarget.style.borderColor = T.border}
+              >
+                <i className="ph ph-upload-simple text-xl" />
+                <span className="text-[11px] font-medium tracking-wide">Drop or click to upload</span>
+                <input type="file" className="hidden" accept="image/*"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+              </label>
+            )
           ) : (
             <div className="flex flex-col gap-2">
               <textarea
@@ -1206,13 +1263,6 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 <p className="text-[10px] font-medium leading-relaxed" style={{ color: T.accent }}>{genError}</p>
               )}
             </div>
-          )}
-          {hasSource && (
-            <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
-              className="w-full py-2 text-[11px] font-medium rounded-lg border transition-all"
-              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
-              Clear source
-            </button>
           )}
         </HardwarePanel>
 
@@ -1276,6 +1326,30 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             <Row label="Blur">
               <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
                 onChange={v => set({ imageBlur: v })} />
+            </Row>
+            <Row label="Flip">
+              <div className="flex gap-2">
+                <button onClick={() => set({ imageFlipH: !state.imageFlipH })}
+                  title="Flip horizontal"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+                  style={
+                    state.imageFlipH
+                      ? { background: T.accent, color: '#fff' }
+                      : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                  }>
+                  <i className="ph ph-flip-horizontal text-sm" />
+                </button>
+                <button onClick={() => set({ imageFlipV: !state.imageFlipV })}
+                  title="Flip vertical"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg transition-all"
+                  style={
+                    state.imageFlipV
+                      ? { background: T.accent, color: '#fff' }
+                      : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                  }>
+                  <i className="ph ph-flip-vertical text-sm" />
+                </button>
+              </div>
             </Row>
             <Row label="Opacity">
               <HwSlider value={Math.round(state.imageOpacity * 100)} min={0} max={100}

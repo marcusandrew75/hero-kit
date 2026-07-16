@@ -58,6 +58,8 @@ export interface BackgroundState {
   imageBlur: number;
   imageMask: ImageMask;
   imageOpacity: number;
+  imageFlipH: boolean;
+  imageFlipV: boolean;
   tintColor: string;           // Used by tint / duotone filter modes
   chromaticAberration: number; // 0–20 px RGB shift
   ditherStyle: DitherStyle;
@@ -247,6 +249,10 @@ export interface ImageLayer {
   width?: number;           // 0–1, relative to canvas width
   height?: number;          // 0–1, relative to canvas height
   naturalAspect?: number;   // image's own width/height — locks resize ratio
+  hidden?: boolean;         // skip this layer entirely at render/export time
+  flipH?: boolean;
+  flipV?: boolean;
+  rotation?: number;        // degrees, clockwise, about the box's own center
   // Per-layer eraser — paint away parts of this layer's own image (e.g. a
   // busy background around a subject) so a hard rectangular box doesn't show
   // once the layer is resized down. Strokes are 0-1 relative to the LAYER'S

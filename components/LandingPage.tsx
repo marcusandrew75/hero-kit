@@ -420,8 +420,9 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
               <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
                 style={{ ...GROTESK, color: T.accent }}>“</span>
               <blockquote className="text-[20px] md:text-[22px] font-bold leading-snug" style={GROTESK}>
-                The tool is among <span style={{ color: T.accent }}>3 really useful</span> visual modificators I've encountered —
-                usually it's just a waste of time, so thank you!
+                I close tools like this in about a minute. HeroKit I kept open.
+                <br /><br />
+                Came for one background. <span style={{ color: T.accent }}>Lost the evening to it.</span> Totally worth my time.
               </blockquote>
             </div>
             <figcaption className="flex items-center gap-3 mt-8">

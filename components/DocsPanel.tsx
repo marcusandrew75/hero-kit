@@ -336,10 +336,11 @@ const CHANGELOG: ChangeEntry[] = [
 
 interface Props {
   onClose: () => void;
+  initialTab?: 'about' | 'docs' | 'changelog';
 }
 
-const DocsPanel: React.FC<Props> = ({ onClose }) => {
-  const [tab, setTab] = useState<'about' | 'docs' | 'changelog'>('about');
+const DocsPanel: React.FC<Props> = ({ onClose, initialTab = 'about' }) => {
+  const [tab, setTab] = useState<'about' | 'docs' | 'changelog'>(initialTab);
 
   // Rendered via a portal directly into document.body — RightPanel sits inside
   // a `transform: translateZ(0)` wrapper (a compositor-layer optimisation for

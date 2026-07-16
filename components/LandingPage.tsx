@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { T } from './ui/HardwareControls';
+import DocsPanel from './DocsPanel';
 import {
   MONO, GROTESK, Hatch, SectionTag, SmartImg, Led, Avatar,
   MarketingMotionStyles, useScrollReveal,
@@ -57,6 +58,7 @@ const GALLERY = Array.from({ length: 7 }, (_, i) =>
 const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [docsTab, setDocsTab] = useState<'about' | 'docs' | 'changelog' | null>(null);
 
   // Escape closes the lightbox
   useEffect(() => {
@@ -96,6 +98,23 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
               For Teams
             </a>
           )}
+          {/* Hidden below sm — this minimal header has no mobile nav pattern
+              (no hamburger), so on small screens only the CTA stays. */}
+          <div className="hidden sm:flex items-center gap-5">
+            {([
+              ['about', 'About'],
+              ['docs', 'Effects'],
+              ['changelog', 'Changelog'],
+            ] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setDocsTab(id)}
+                className="text-[13px] font-semibold transition-colors"
+                style={{ color: T.muted }}
+                onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+                {label}
+              </button>
+            ))}
+          </div>
           <OpenCta onOpen={onOpen} small />
         </div>
       </header>
@@ -604,6 +623,8 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </button>
         </div>
       )}
+
+      {docsTab && <DocsPanel initialTab={docsTab} onClose={() => setDocsTab(null)} />}
 
     </div>
   );

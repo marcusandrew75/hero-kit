@@ -170,6 +170,14 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.4', date: '15 Jul 2026',
+    items: [
+      'Added: reposition and resize Layer 2/3 directly on the canvas — click "Move / Resize" on a layer, drag it into place, drag the corner handle to resize (locked to the image\'s own aspect ratio). Previously every layer was locked to full-bleed cover with no way to tuck a second image alongside the primary one',
+      'Added: cut out a layer — click "Cut Out / Erase" and paint the part of a layer you want to keep (a subject on a busy background, say); everything else is removed cleanly, with no hard box edge. Toggle to "Paint to Remove" for the inverse',
+      'Improved: the paint pad (Effect Mask and layer cut-out alike) — a centered expand icon instead of a small corner button, no more instruction text competing with the description below, and a zoomed magnifier loupe that follows the brush while actively painting in the expanded view, for tracing fine subject edges precisely',
+    ],
+  },
+  {
     version: '3.3', date: '13 Jul 2026',
     items: [
       'Added: dark/light text toggle in Preview in Context — ink-colored type for light backgrounds (pale Silkscreen paper, bright Postcard skies) where white type was unreadable',

@@ -17,6 +17,7 @@ interface Props {
   showOverlay: boolean;
   onShowOverlayChange: (v: boolean) => void;
   accentColor: string;
+  hint?: React.ReactNode; // overridable empty-state instruction
 }
 
 // ─── Drawing surface — shared between the compact pad and the expanded modal ──
@@ -30,8 +31,10 @@ const PadSurface: React.FC<{
   invert: boolean;
   showOverlay: boolean;
   accentColor: string;
+  hint?: React.ReactNode;
+  hideHint?: boolean; // compact pad — the expand button + description below already cover this
   tall?: boolean; // taller aspect for the expanded modal — more room to work
-}> = ({ imageUrl, strokes, onChange, brushSize, feather, invert, showOverlay, accentColor, tall }) => {
+}> = ({ imageUrl, strokes, onChange, brushSize, feather, invert, showOverlay, accentColor, hint, hideHint, tall }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const [hovering, setHovering] = useState(false);
@@ -39,6 +42,11 @@ const PadSurface: React.FC<{
   // the stroke overlay canvas so it updates on every pointer move, not just
   // while actively painting.
   const [cursorPx, setCursorPx] = useState<{ x: number; y: number; size: number } | null>(null);
+  // Magnifier (modal only) — shows a zoomed loupe of the image while actively
+  // painting, so fine subject edges are easy to trace precisely. Needs the
+  // image's natural pixel size to replicate its object-cover crop math.
+  const [isPainting, setIsPainting] = useState(false);
+  const [natSize, setNatSize] = useState<{ w: number; h: number } | null>(null);
 
   // Strokes drawn locally but not yet pushed to the parent. The paint preview
   // redraws from these directly (imperative, cheap) on every pointermove.
@@ -164,6 +172,7 @@ const PadSurface: React.FC<{
     if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
     const p = toRel(e);
     inProgressRef.current = { points: [p], size: brushSize };
+    setIsPainting(true);
     redraw();
   };
 
@@ -179,6 +188,7 @@ const PadSurface: React.FC<{
   };
 
   const handlePointerUp = () => {
+    setIsPainting(false);
     if (inProgressRef.current) {
       localStrokesRef.current = [...localStrokesRef.current, inProgressRef.current];
       inProgressRef.current = null;
@@ -191,7 +201,44 @@ const PadSurface: React.FC<{
   // Hint only shows before the user has painted anything, and fades out on
   // hover so it never obstructs the view once they're actually working —
   // it reappears if they mouse away without painting, as a standing reminder.
-  const showHint = strokes.length === 0 && !hovering;
+  const showHint = !hideHint && strokes.length === 0 && !hovering;
+
+  // Magnifier — replicates the <img>'s object-cover crop math so the zoomed
+  // loupe centers on exactly the point under the cursor, letting fine subject
+  // edges be traced precisely. Only active in the expanded modal (tall) while
+  // a stroke is actively being painted. Offset up-and-right of the actual
+  // cursor (clamped to the pad's own bounds) so the lens never covers the
+  // exact point being painted.
+  const MAG_SIZE = 150, MAG_ZOOM = 3, MAG_OFFSET = 24;
+  let magnifier: { style: React.CSSProperties; left: number; top: number } | null = null;
+  if (tall && isPainting && cursorPx && natSize && containerRef.current) {
+    const cw = containerRef.current.clientWidth, ch = containerRef.current.clientHeight;
+    const coverScale = Math.max(cw / natSize.w, ch / natSize.h);
+    const offX = (cw - natSize.w * coverScale) / 2;
+    const offY = (ch - natSize.h * coverScale) / 2;
+    // Point under the cursor, in the image's own natural pixel space
+    const imgX = (cursorPx.x * cw - offX) / coverScale;
+    const imgY = (cursorPx.y * ch - offY) / coverScale;
+    const bgScale = coverScale * MAG_ZOOM;
+
+    const cursorLeftPx = cursorPx.x * cw, cursorTopPx = cursorPx.y * ch;
+    const half = cursorPx.size / 2 + MAG_OFFSET;
+    let left = cursorLeftPx + half, top = cursorTopPx - half - MAG_SIZE;
+    if (left + MAG_SIZE > cw) left = cursorLeftPx - half - MAG_SIZE; // flip to the left if it'd overflow
+    if (top < 0) top = cursorTopPx + half;                            // flip below if it'd overflow above
+    left = Math.max(0, Math.min(cw - MAG_SIZE, left));
+    top  = Math.max(0, Math.min(ch - MAG_SIZE, top));
+
+    magnifier = {
+      left, top,
+      style: {
+        backgroundImage: `url(${imageUrl})`,
+        backgroundSize: `${natSize.w * bgScale}px ${natSize.h * bgScale}px`,
+        backgroundPosition: `${MAG_SIZE / 2 - imgX * bgScale}px ${MAG_SIZE / 2 - imgY * bgScale}px`,
+        backgroundRepeat: 'no-repeat',
+      },
+    };
+  }
 
   return (
     <div
@@ -206,7 +253,8 @@ const PadSurface: React.FC<{
       onMouseLeave={() => setHovering(false)}
     >
       {imageUrl && (
-        <img src={imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
+        <img src={imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none"
+          onLoad={e => setNatSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })} />
       )}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />
       {/* Fires once painting settles (see scheduleCommit) — tells the user why
@@ -235,12 +283,31 @@ const PadSurface: React.FC<{
           }}
         />
       )}
+      {/* Magnifier loupe — zoomed view of the image around the cursor while
+          actively painting, for precise edge tracing (expanded modal only). */}
+      {magnifier && (
+        <div
+          className="absolute rounded-full pointer-events-none overflow-hidden"
+          style={{
+            left: magnifier.left, top: magnifier.top,
+            width: MAG_SIZE, height: MAG_SIZE,
+            boxShadow: '0 0 0 2px rgba(255,255,255,0.9), 0 0 0 3px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.4)',
+            ...magnifier.style,
+          }}
+        >
+          {/* Crosshair marking the exact point under the cursor */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.85)', boxShadow: '0 0 2px rgba(0,0,0,0.6)' }} />
+            <div style={{ position: 'absolute', width: 14, height: 1, background: 'rgba(255,255,255,0.85)', boxShadow: '0 0 2px rgba(0,0,0,0.6)' }} />
+          </div>
+        </div>
+      )}
       <div
         className="absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-200"
         style={{ opacity: showHint ? 1 : 0 }}
       >
         <p className="text-[11px] text-white/50 text-center leading-relaxed px-6">
-          Paint where effects apply.<br />Everything else stays original.
+          {hint ?? <>Paint where effects apply.<br />Everything else stays original.</>}
         </p>
       </div>
     </div>
@@ -252,25 +319,27 @@ const PadSurface: React.FC<{
 const EffectMaskPad: React.FC<Props> = ({
   imageUrl, strokes, onChange, brushSize, onBrushSizeChange,
   feather, onFeatherChange, invert, onInvertChange,
-  showOverlay, onShowOverlayChange, accentColor,
+  showOverlay, onShowOverlayChange, accentColor, hint,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
-  const sharedSurfaceProps = { imageUrl, strokes, onChange, brushSize, feather, invert, showOverlay, accentColor };
+  const sharedSurfaceProps = { imageUrl, strokes, onChange, brushSize, feather, invert, showOverlay, accentColor, hint };
 
   return (
     <>
       <div className="relative">
-        <PadSurface {...sharedSurfaceProps} />
-        {/* Expand — the sidebar is 310px wide, genuinely fiddly for precision
-            painting. Opens the same pad much larger with its own controls. */}
+        <PadSurface {...sharedSurfaceProps} hideHint />
+        {/* Expand — centered so it reads immediately as "there's more here",
+            rather than a small corner affordance easy to miss. The sidebar is
+            310px wide, genuinely fiddly for precision painting; this opens
+            the same pad much larger with its own controls. */}
         <button
           onClick={() => setExpanded(true)}
           title="Expand for more precise painting"
-          className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-lg transition-all"
-          style={{ background: 'rgba(0,0,0,0.45)', color: 'rgba(255,255,255,0.85)' }}
+          className="absolute inset-0 m-auto w-11 h-11 flex items-center justify-center rounded-full transition-all"
+          style={{ background: 'rgba(0,0,0,0.5)', color: 'rgba(255,255,255,0.9)' }}
         >
-          <i className="ph ph-arrows-out text-sm" />
+          <i className="ph ph-arrows-out text-lg" />
         </button>
       </div>
 

@@ -5,6 +5,7 @@ import RightPanel from './components/RightPanel';
 import PreviewOverlay, { PreviewLayout, PreviewFont, PreviewTheme, PreviewCopy, PreviewCopyField } from './components/PreviewOverlay';
 import LooksPanel, { loadHistory, HistoryEntry } from './components/LooksPanel';
 import CanvasDropZone from './components/CanvasDropZone';
+import LayerTransformOverlay from './components/LayerTransformOverlay';
 import LandingPage from './components/LandingPage';
 import TeamsPage from './components/TeamsPage';
 import { BackgroundState } from './types';
@@ -81,6 +82,10 @@ const App: React.FC = () => {
   const [aspectRatio, setAspectRatio]     = useState('free');
   const [boxSize, setBoxSize]             = useState<{ w: number; h: number } | null>(null);
   const [hideEffects, setHideEffects]     = useState(false);
+  // Which layer (if any) is being repositioned directly on the canvas —
+  // transient UI state, never persisted into Looks/History, same treatment
+  // as showPreview/isFullscreen/hideEffects above.
+  const [editingLayerId, setEditingLayerId] = useState<string | null>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const historyTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -145,7 +150,22 @@ const App: React.FC = () => {
     return () => clearTimeout(historyTimer.current);
   }, [state]);
 
+  // Clear editingLayerId if the layer it points at no longer exists —
+  // covers deletion mid-edit without relying on every call site remembering to.
+  useEffect(() => {
+    if (editingLayerId && !state.layers.some(l => l.id === editingLayerId)) {
+      setEditingLayerId(null);
+    }
+  }, [editingLayerId, state.layers]);
+
   const handleChange = (patch: Partial<BackgroundState>) => setState(prev => ({ ...prev, ...patch }));
+
+  // Layer positioning and Preview in Context both want the same canvas real
+  // estate and both bind pointer/click handling there — mutually exclusive.
+  const handleEditLayer = (id: string | null) => {
+    setEditingLayerId(id);
+    if (id !== null) setShowPreview(false);
+  };
 
   const handlePreviewCopyChange = (field: PreviewCopyField, value: string | null) => {
     setPreviewCopy(prev => {
@@ -267,6 +287,22 @@ const App: React.FC = () => {
                 navInset={aspectRatio === 'free'} />
             </div>
           )}
+
+          {/* Direct-manipulation layer position/resize — mutually exclusive
+              with Preview in Context, see handleEditLayer */}
+          {editingLayerId && (() => {
+            const layer = state.layers.find(l => l.id === editingLayerId);
+            if (!layer) return null;
+            return (
+              <LayerTransformOverlay
+                layer={layer}
+                onChange={patch => handleChange({
+                  layers: state.layers.map(l => l.id === editingLayerId ? { ...l, ...patch } : l),
+                })}
+                onDone={() => setEditingLayerId(null)}
+              />
+            );
+          })()}
         </div>
 
         {/* Aspect ratio selector — top centre */}
@@ -320,7 +356,7 @@ const App: React.FC = () => {
 
           {/* Toggle */}
           <button
-            onClick={() => setShowPreview(v => !v)}
+            onClick={() => { setShowPreview(v => !v); setEditingLayerId(null); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap ${
               showPreview ? 'bg-[#1a1917] text-[#f2f0eb]' : 'text-black/60 hover:text-black/90'
             }`}
@@ -418,7 +454,8 @@ const App: React.FC = () => {
         style={{ width: isFullscreen ? 0 : 310, transition: 'width 280ms cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0 }}
       >
         <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
-          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} />
+          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
+            editingLayerId={editingLayerId} onEditLayer={handleEditLayer} />
         </div>
       </div>
 

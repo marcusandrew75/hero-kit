@@ -523,11 +523,26 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
   );
 };
 
+// Reads natural pixel dimensions of an image URL — used to lock the layer's
+// resize handle to its own aspect ratio in LayerTransformOverlay. Failure
+// (e.g. a CORS-blocked measure) just leaves naturalAspect unset — the overlay
+// falls back to a 1:1 lock rather than blocking the layer from being used.
+const loadNaturalAspect = (url: string): Promise<number | undefined> =>
+  new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => resolve(img.naturalWidth / img.naturalHeight);
+    img.onerror = () => resolve(undefined);
+    img.src = url;
+  });
+
 const LayersSection: React.FC<{
   layers: ImageLayer[];
   onChange: (layers: ImageLayer[]) => void;
-}> = ({ layers, onChange }) => {
+  editingLayerId: string | null;
+  onEditLayer: (id: string | null) => void;
+}> = ({ layers, onChange, editingLayerId, onEditLayer }) => {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [erasing, setErasing] = useState<Record<string, boolean>>({});
 
   const addLayer = () => {
     if (layers.length >= 2) return;
@@ -536,7 +551,10 @@ const LayersSection: React.FC<{
     setCollapsed(prev => ({ ...prev, [id]: false }));
   };
   const update = (id: string, patch: Partial<ImageLayer>) => onChange(layers.map(l => l.id === id ? { ...l, ...patch } : l));
-  const remove = (id: string) => onChange(layers.filter(l => l.id !== id));
+  const remove = (id: string) => {
+    onChange(layers.filter(l => l.id !== id));
+    if (editingLayerId === id) onEditLayer(null);
+  };
   const toggle = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
   return (
@@ -577,14 +595,28 @@ const LayersSection: React.FC<{
                       <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">
                         Change
                         <input type="file" accept="image/*" className="hidden"
-                          onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = ev => update(layer.id, { imageUrl: ev.target?.result as string }); r.readAsDataURL(f); }} />
+                          onChange={e => {
+                            const f = e.target.files?.[0]; if (!f) return;
+                            const r = new FileReader();
+                            r.onload = async ev => {
+                              const dataUrl = ev.target?.result as string;
+                              const naturalAspect = await loadNaturalAspect(dataUrl);
+                              // Reset position/size — a swapped-in image at the old box's
+                              // aspect would otherwise look squashed until re-positioned.
+                              update(layer.id, { imageUrl: dataUrl, naturalAspect, x: 0, y: 0, width: 1, height: 1 });
+                            };
+                            r.readAsDataURL(f);
+                          }} />
                       </label>
                       <button onClick={() => update(layer.id, { imageUrl: undefined })}
                         className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">Clear</button>
                     </div>
                   </div>
                 ) : (
-                  <LayerPicker onPick={url => update(layer.id, { imageUrl: url })} />
+                  <LayerPicker onPick={async url => {
+                    const naturalAspect = await loadNaturalAspect(url);
+                    update(layer.id, { imageUrl: url, naturalAspect, x: 0, y: 0, width: 1, height: 1 });
+                  }} />
                 )}
                 <div>
                   <p className="text-[10px] font-medium mb-1.5" style={{ color: T.muted }}>Blend mode</p>
@@ -593,6 +625,87 @@ const LayersSection: React.FC<{
                 <Row label="Opacity">
                   <HwSlider value={Math.round(layer.opacity * 100)} min={1} max={100} onChange={v => update(layer.id, { opacity: v / 100 })} />
                 </Row>
+                {layer.imageUrl && (
+                  <button
+                    onClick={() => onEditLayer(editingLayerId === layer.id ? null : layer.id)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                    style={
+                      editingLayerId === layer.id
+                        ? { background: T.accent, color: '#fff' }
+                        : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                    }>
+                    <i className="ph ph-frame-corners text-sm" />
+                    {editingLayerId === layer.id ? 'Done' : 'Move / Resize'}
+                  </button>
+                )}
+                {layer.imageUrl && (
+                  <button
+                    onClick={() => setErasing(prev => ({ ...prev, [layer.id]: !prev[layer.id] }))}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                    style={
+                      erasing[layer.id]
+                        ? { background: T.accent, color: '#fff' }
+                        : { background: T.panel, color: T.muted, border: `1px solid ${T.border}` }
+                    }>
+                    <i className="ph ph-scissors text-sm" />
+                    {erasing[layer.id] ? 'Done' : 'Cut Out / Erase'}
+                  </button>
+                )}
+                {layer.imageUrl && erasing[layer.id] && (() => {
+                  const keep = (layer.maskMode ?? 'keep') === 'keep';
+                  const hint = keep
+                    ? <>Paint what to keep.<br />Everything else is removed.</>
+                    : <>Paint what to remove.<br />Everything else stays.</>;
+                  return (
+                  <div className="space-y-3 pt-1">
+                    {/* Keep is the default — painting the subject you want and
+                        letting the rest fall away sidesteps the hard box edge
+                        that hand-erasing a whole background always leaves. */}
+                    <HwSegment
+                      options={[{ id:'keep', label:'Paint to Keep' }, { id:'erase', label:'Paint to Remove' }]}
+                      value={keep ? 'keep' : 'erase'}
+                      onChange={v => update(layer.id, { maskMode: v as 'keep' | 'erase' })}
+                    />
+                    <EffectMaskPad
+                      imageUrl={layer.imageUrl}
+                      strokes={layer.maskStrokes ?? []}
+                      onChange={strokes => update(layer.id, { maskStrokes: strokes })}
+                      brushSize={layer.maskBrushSize ?? 0.08}
+                      onBrushSizeChange={v => update(layer.id, { maskBrushSize: v })}
+                      feather={layer.maskFeather ?? 20}
+                      onFeatherChange={v => update(layer.id, { maskFeather: v })}
+                      invert={false}
+                      onInvertChange={() => {}}
+                      showOverlay={layer.maskShowOverlay ?? true}
+                      onShowOverlayChange={v => update(layer.id, { maskShowOverlay: v })}
+                      accentColor={T.accent}
+                      hint={hint}
+                    />
+                    <Row label="Brush size">
+                      <HwSlider value={Math.round((layer.maskBrushSize ?? 0.08) * 100)} min={2} max={40}
+                        onChange={v => update(layer.id, { maskBrushSize: v / 100 })} />
+                    </Row>
+                    <Row label="Feather">
+                      <HwSlider value={layer.maskFeather ?? 20} min={0} max={100}
+                        onChange={v => update(layer.id, { maskFeather: v })} />
+                    </Row>
+                    <Row label="Show paint">
+                      <TactileToggle value={layer.maskShowOverlay ?? true} onChange={v => update(layer.id, { maskShowOverlay: v })} />
+                    </Row>
+                    <button onClick={() => update(layer.id, { maskStrokes: [] })}
+                      disabled={(layer.maskStrokes ?? []).length === 0}
+                      className="w-full py-2 text-[11px] font-medium rounded-lg border transition-all disabled:opacity-40"
+                      style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+                      Clear painting
+                    </button>
+                    <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                      {keep
+                        ? 'Paint the part you want to keep — a subject on a busy background, say — and everything else is removed cleanly, with no hard box edge.'
+                        : 'Paint the parts to remove, keeping the rest. Best when the thing you want gone is smaller than the thing you want to keep.'}
+                    </p>
+                  </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -887,9 +1000,11 @@ interface RightPanelProps {
   onChange: (patch: Partial<BackgroundState>) => void;
   onOpenLooks: () => void;
   onResetEffects: () => void;
+  editingLayerId: string | null;
+  onEditLayer: (id: string | null) => void;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer }) => {
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
@@ -1138,7 +1253,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         {/* ── Layers ─────────────────────────────────────────────────────── */}
         {hasSource && (
           <HardwarePanel label="Layers" number={4}>
-            <LayersSection layers={state.layers ?? []} onChange={layers => set({ layers })} />
+            <LayersSection layers={state.layers ?? []} onChange={layers => set({ layers })}
+              editingLayerId={editingLayerId} onEditLayer={onEditLayer} />
           </HardwarePanel>
         )}
 

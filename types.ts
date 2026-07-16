@@ -239,6 +239,27 @@ export interface ImageLayer {
   imageUrl?: string;
   blendMode: LayerBlendMode;
   opacity: number; // 0–1
+  // Position/size within the canvas — all optional and default to a full
+  // 0,0,1,1 box (today's full-bleed behavior) so layers saved before this
+  // field existed render exactly as they always have.
+  x?: number;              // 0–1, left edge relative to canvas width
+  y?: number;               // 0–1, top edge relative to canvas height
+  width?: number;           // 0–1, relative to canvas width
+  height?: number;          // 0–1, relative to canvas height
+  naturalAspect?: number;   // image's own width/height — locks resize ratio
+  // Per-layer eraser — paint away parts of this layer's own image (e.g. a
+  // busy background around a subject) so a hard rectangular box doesn't show
+  // once the layer is resized down. Strokes are 0-1 relative to the LAYER'S
+  // OWN box, not the canvas, so an erased region moves/scales with the layer.
+  maskStrokes?: MaskStroke[];
+  maskFeather?: number;      // 0-100, same slider range as Effect Mask's
+  // 'keep' (default): painted area is kept, everything else removed — the
+  // subject-cutout model, which sidesteps the box-edge halo entirely since
+  // the outside is never hand-erased, just never kept. 'erase': the inverse,
+  // for removing a small area while keeping the rest.
+  maskMode?: 'keep' | 'erase';
+  maskBrushSize?: number;    // persisted per layer, matches Effect Mask's own persistence
+  maskShowOverlay?: boolean; // persisted per layer, matches Effect Mask's own persistence
 }
 
 export interface BlurSpot {

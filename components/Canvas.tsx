@@ -581,13 +581,27 @@ const GenerativeCanvas: React.FC<{ preset: string; colors: { color1: string; col
 
 const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
 
-/** Draw an image to a canvas with CSS object-cover (centre-crop) semantics */
-const drawObjectCover = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) => {
+/** Draw an image into an arbitrary rect with CSS object-cover (centre-crop)
+    semantics, clipped to that rect — the clip only matters once the rect
+    isn't flush with the canvas edges, since cover-fit intentionally overflows
+    and that overflow was previously invisible only because the canvas
+    boundary itself did the clipping. */
+const drawObjectCoverRect = (
+  ctx: CanvasRenderingContext2D, img: HTMLImageElement,
+  x: number, y: number, w: number, h: number,
+) => {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
   const scale = Math.max(w / img.width, h / img.height);
   const sw    = img.width  * scale;
   const sh    = img.height * scale;
-  ctx.drawImage(img, (w - sw) / 2, (h - sh) / 2, sw, sh);
+  ctx.drawImage(img, x + (w - sw) / 2, y + (h - sh) / 2, sw, sh);
+  ctx.restore();
 };
+
+/** Draw an image to a canvas with CSS object-cover (centre-crop) semantics */
+const drawObjectCover = (ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) =>
+  drawObjectCoverRect(ctx, img, 0, 0, w, h);
 
 // ─── Color grade transforms (per pixel, each returns [R,G,B]) ────────────────
 
@@ -1844,8 +1858,19 @@ const applyCA = (
 const rasterizeEffectMask = (
   strokes: import('../types').MaskStroke[], w: number, h: number, feather: number,
 ): Uint8ClampedArray => {
+  // Feathering needs real painted pixels beyond the true edge to blur from —
+  // otherwise a CSS blur() samples "nothing" past the canvas boundary, which
+  // erodes the mask back toward unpainted right at the edge. That reads as a
+  // persistent halo/frame exactly where a user painted (erased) all the way
+  // to the boundary, since the erase strength quietly weakens there. Fix:
+  // draw strokes onto a canvas padded by the feather radius, blur that, then
+  // crop back to the real w×h — the blur now has genuine paint to sample
+  // from outside the visible edge instead of transparent canvas-edge nothing.
+  const pad = feather > 0 ? Math.ceil(feather) : 0;
+  const pw = w + pad * 2, ph = h + pad * 2;
+
   const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
+  canvas.width = pw; canvas.height = ph;
   const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#ffffff';
@@ -1858,14 +1883,14 @@ const rasterizeEffectMask = (
     if (stroke.points.length === 1) {
       const p = stroke.points[0];
       ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, r, 0, Math.PI * 2);
+      ctx.arc(p.x * w + pad, p.y * h + pad, r, 0, Math.PI * 2);
       ctx.fill();
     } else if (stroke.points.length > 1) {
       ctx.lineWidth = r * 2;
       ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x * w, stroke.points[0].y * h);
+      ctx.moveTo(stroke.points[0].x * w + pad, stroke.points[0].y * h + pad);
       for (let i = 1; i < stroke.points.length; i++) {
-        ctx.lineTo(stroke.points[i].x * w, stroke.points[i].y * h);
+        ctx.lineTo(stroke.points[i].x * w + pad, stroke.points[i].y * h + pad);
       }
       ctx.stroke();
     }
@@ -1873,11 +1898,11 @@ const rasterizeEffectMask = (
 
   if (feather > 0) {
     const blurred = document.createElement('canvas');
-    blurred.width = w; blurred.height = h;
+    blurred.width = pw; blurred.height = ph;
     const bctx = blurred.getContext('2d')!;
     bctx.filter = `blur(${feather}px)`;
     bctx.drawImage(canvas, 0, 0);
-    return new Uint8ClampedArray(bctx.getImageData(0, 0, w, h).data);
+    return new Uint8ClampedArray(bctx.getImageData(pad, pad, w, h).data);
   }
   return new Uint8ClampedArray(ctx.getImageData(0, 0, w, h).data);
 };
@@ -2221,12 +2246,52 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           const offCtx = off.getContext('2d')!;
           drawObjectCover(offCtx, img, w, h);
 
-          // Blend additional layers on top
+          // Blend additional layers on top — each rendered into its own
+          // offscreen box first (so its eraser mask, if any, only ever
+          // affects that layer's own pixels), then composited onto the main
+          // buffer at its position with its blend mode + opacity.
           layers.filter(l => l.imageUrl).forEach((layer, i) => {
             if (!layerImgs[i]) return;
+            const lx = (layer.x ?? 0) * w, ly = (layer.y ?? 0) * h;
+            const lw = (layer.width ?? 1) * w, lh = (layer.height ?? 1) * h;
+
+            // Step 1: cover-fit this layer's image into an offscreen canvas
+            // sized to its own on-screen pixel box (rounded to whole pixels —
+            // the composite below uses the 4-arg drawImage so the destination
+            // rect still matches lx/ly/lw/lh exactly regardless of rounding).
+            const lCanvas = document.createElement('canvas');
+            lCanvas.width  = Math.max(1, Math.round(lw));
+            lCanvas.height = Math.max(1, Math.round(lh));
+            const lCtx = lCanvas.getContext('2d')!;
+            drawObjectCoverRect(lCtx, layerImgs[i], 0, 0, lCanvas.width, lCanvas.height);
+
+            // Step 2: erase painted regions from this layer's own alpha —
+            // strokes are relative to the layer's own box, so they move/scale
+            // with it if repositioned later.
+            if (layer.maskStrokes?.length) {
+              // rasterizeEffectMask's feather is an absolute px blur; scale it
+              // to this layer's (usually much smaller) box the same way brush
+              // radius already scales by Math.min(w,h) — 1000 is a reference
+              // dimension roughly matching a typical full-size hero canvas, so
+              // a full-bleed layer feathers about the same as the whole-canvas
+              // Effect Mask does today.
+              const featherPx = (layer.maskFeather ?? 20) * (Math.min(lCanvas.width, lCanvas.height) / 1000);
+              const maskBuf = rasterizeEffectMask(layer.maskStrokes, lCanvas.width, lCanvas.height, featherPx);
+              const imgData = lCtx.getImageData(0, 0, lCanvas.width, lCanvas.height);
+              // 'keep' (default): painted stays, unpainted removed → factor = m.
+              // 'erase': painted removed, unpainted stays → factor = 1 - m.
+              const keep = (layer.maskMode ?? 'keep') === 'keep';
+              for (let p = 0; p < imgData.data.length; p += 4) {
+                const m = maskBuf[p + 3] / 255;
+                imgData.data[p + 3] *= keep ? m : (1 - m);
+              }
+              lCtx.putImageData(imgData, 0, 0);
+            }
+
+            // Step 3: composite the (possibly masked) layer onto the main buffer
             offCtx.globalCompositeOperation = layer.blendMode as GlobalCompositeOperation;
             offCtx.globalAlpha = layer.opacity;
-            drawObjectCover(offCtx, layerImgs[i], w, h);
+            offCtx.drawImage(lCanvas, lx, ly, lw, lh);
           });
           offCtx.globalCompositeOperation = 'source-over';
           offCtx.globalAlpha = 1;

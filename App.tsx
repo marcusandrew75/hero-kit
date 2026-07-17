@@ -89,7 +89,8 @@ const App: React.FC = () => {
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const isMobile = useIsMobile();
-  const { offsetTop: viewportOffsetTop } = useVisualViewport();
+  const { offsetTop: viewportOffsetTop, height: viewportHeight } = useVisualViewport();
+  const showDebug = typeof window !== 'undefined' && window.location.search.includes('debug');
   const [sheetState, setSheetState]       = useState<'peek' | 'expanded'>('peek');
   const [aspectRatio, setAspectRatio]     = useState('free');
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false);
@@ -632,6 +633,20 @@ const App: React.FC = () => {
           onApply={handleApplyLook}
           onClose={() => setShowLooks(false)}
         />
+      )}
+
+      {/* Temporary viewport debug readout — only shown when ?debug is in the
+          URL, so real users never see it. Lets a real iOS device report the
+          actual numbers back (does visualViewport even shrink for the
+          keyboard? by how much?) instead of me guessing blind. */}
+      {showDebug && (
+        <div className="fixed top-1/2 left-2 z-[999] pointer-events-none font-mono text-[11px] leading-tight px-2 py-1.5 rounded"
+          style={{ background: 'rgba(0,0,0,0.8)', color: '#0f0' }}>
+          innerH: {typeof window !== 'undefined' ? window.innerHeight : 0}<br />
+          vvH: {Math.round(viewportHeight)}<br />
+          vvTop: {Math.round(viewportOffsetTop)}<br />
+          kbd: {typeof window !== 'undefined' ? Math.round(window.innerHeight - viewportHeight - viewportOffsetTop) : 0}
+        </div>
       )}
     </div>
   );

@@ -254,6 +254,20 @@ const trackUnsplashDownload = (downloadLocation: string) => {
   fetch(`/api/unsplash-download?url=${encodeURIComponent(downloadLocation)}`).catch(() => {});
 };
 
+// On mobile, focusing a search field pulls it to the very top of the sheet's
+// own scroll area (~14% down the screen) — far above wherever the keyboard
+// sits — so the field stays visible regardless of whether iOS reports the
+// keyboard's height at all. This sidesteps the whole "compute the keyboard
+// height and reposition against it" approach that kept failing: block:'start'
+// aligns the field to the TOP of its scroll viewport, which is the top of
+// the sheet no matter where the sheet's bottom edge is. The delay lets the
+// keyboard finish animating in (and lets iOS do its own scroll first) so
+// this scroll lands last and wins.
+const scrollFieldToTopOnFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+  const el = e.currentTarget;
+  setTimeout(() => el.scrollIntoView({ block: 'start', behavior: 'smooth' }), 350);
+};
+
 // ─── Gallery section ─────────────────────────────────────────────────────────
 
 const GallerySection: React.FC<{
@@ -386,6 +400,7 @@ const GallerySection: React.FC<{
             <input type="text" placeholder="Search Pexels…" value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doSearch(query)}
+              onFocus={mobile ? scrollFieldToTopOnFocus : undefined}
               className={`flex-1 rounded-lg px-3 py-1.5 outline-none border transition-colors ${mobile ? 'text-base' : 'text-[11px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => doSearch(query)} disabled={searching}
@@ -444,6 +459,7 @@ const GallerySection: React.FC<{
             <input type="text" placeholder="Search Unsplash…" value={uQuery}
               onChange={e => setUQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doUnsplashSearch(uQuery)}
+              onFocus={mobile ? scrollFieldToTopOnFocus : undefined}
               className={`flex-1 rounded-lg px-3 py-1.5 outline-none border transition-colors ${mobile ? 'text-base' : 'text-[11px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => doUnsplashSearch(uQuery)} disabled={uSearching}
@@ -611,6 +627,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
           <div className="flex gap-1">
             <input value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && searchPexels(query)}
+              onFocus={mobile ? scrollFieldToTopOnFocus : undefined}
               placeholder="Search Pexels…"
               className={`flex-1 rounded-lg px-2 py-1.5 outline-none border ${mobile ? 'text-base' : 'text-[10px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
@@ -655,6 +672,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
           <div className="flex gap-1">
             <input value={uQuery} onChange={e => setUQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && searchUnsplash(uQuery)}
+              onFocus={mobile ? scrollFieldToTopOnFocus : undefined}
               placeholder="Search Unsplash…"
               className={`flex-1 rounded-lg px-2 py-1.5 outline-none border ${mobile ? 'text-base' : 'text-[10px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />

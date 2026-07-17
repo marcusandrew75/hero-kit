@@ -90,6 +90,7 @@ const App: React.FC = () => {
   const isMobile = useIsMobile();
   const [sheetState, setSheetState]       = useState<'peek' | 'expanded'>('peek');
   const [aspectRatio, setAspectRatio]     = useState('free');
+  const [ratioMenuOpen, setRatioMenuOpen] = useState(false);
   const [boxSize, setBoxSize]             = useState<{ w: number; h: number } | null>(null);
   const [hideEffects, setHideEffects]     = useState(false);
   // Which layer (if any) is being repositioned directly on the canvas —
@@ -309,8 +310,15 @@ const App: React.FC = () => {
     );
   }
 
+  // dvh (falls back to the h-screen class's 100vh on browsers that don't
+  // support it) rather than plain vh — iOS Safari's address bar can
+  // collapse/expand as you scroll (e.g. scrolling inside the sheet), which
+  // changes the effective viewport height mid-session; 100vh doesn't track
+  // that, so fixed-positioned chrome (ratio selector, top-right cluster) can
+  // end up positioned against a stale reference and appear to drift toward
+  // the top. dvh tracks the real visible viewport instead.
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#f2f0eb]">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#f2f0eb]" style={{ height: '100dvh' }}>
       {/* Canvas area */}
       <div
         ref={outerRef}
@@ -397,30 +405,59 @@ const App: React.FC = () => {
           })()}
         </div>
 
-        {/* Aspect ratio selector — top centre on desktop; on mobile it's
-            left-anchored with horizontal scroll instead of dead-centered, so
-            it doesn't compete with the top-right cluster for the same space
-            on a narrow viewport. */}
-        <div className={`absolute top-4 z-[130] flex items-center bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-lg ${
-          isMobile ? 'left-4 right-[124px] overflow-x-auto' : 'left-1/2 -translate-x-1/2'
-        }`}>
-          {RATIOS.map(r => (
+        {/* Aspect ratio selector — a wide pill row on desktop, but that same
+            row either overflowed or truncated illegibly against the
+            top-right cluster on a real phone (confirmed on-device), so
+            mobile gets a single tap-to-open dropdown instead — a much more
+            standard, discoverable mobile pattern than a hidden horizontal
+            scroll. */}
+        {isMobile ? (
+          <div className="absolute z-[130]" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 16px)', left: 16 }}>
             <button
-              key={r.id}
-              onClick={() => setAspectRatio(r.id)}
-              className={`px-3 py-[6px] rounded-full text-[11px] font-medium transition-all shrink-0 ${
-                aspectRatio === r.id
-                  ? 'bg-[#1a1917] text-[#f2f0eb] shadow-sm'
-                  : 'text-black/40 hover:text-black/80'
-              }`}
+              onClick={() => setRatioMenuOpen(v => !v)}
+              className="flex items-center gap-1.5 bg-white/80 backdrop-blur-md border border-black/10 rounded-full pl-3 pr-2.5 py-1.5 text-[11px] font-medium text-black/70 shadow-lg"
             >
-              {r.label}
+              {RATIOS.find(r => r.id === aspectRatio)?.label ?? 'Free'}
+              <i className={`ph ph-caret-down text-xs transition-transform ${ratioMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-          ))}
-        </div>
+            {ratioMenuOpen && (
+              <div className="absolute top-full left-0 mt-1.5 bg-white/95 backdrop-blur-md border border-black/10 rounded-2xl p-1.5 shadow-lg flex flex-col gap-0.5 min-w-[104px]">
+                {RATIOS.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => { setAspectRatio(r.id); setRatioMenuOpen(false); }}
+                    className={`px-3 py-2 rounded-xl text-[12px] font-medium text-left transition-all ${
+                      aspectRatio === r.id ? 'bg-[#1a1917] text-[#f2f0eb]' : 'text-black/60'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[130] flex items-center bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-lg">
+            {RATIOS.map(r => (
+              <button
+                key={r.id}
+                onClick={() => setAspectRatio(r.id)}
+                className={`px-3 py-[6px] rounded-full text-[11px] font-medium transition-all ${
+                  aspectRatio === r.id
+                    ? 'bg-[#1a1917] text-[#f2f0eb] shadow-sm'
+                    : 'text-black/40 hover:text-black/80'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Top-right button cluster */}
-        <div className="absolute top-4 right-4 z-[130] flex items-center gap-2">
+        {/* Top-right button cluster — safe-area-aware top offset on mobile
+            so it clears the iOS toolbar instead of sitting flush against it. */}
+        <div className="absolute right-4 z-[130] flex items-center gap-2"
+          style={{ top: isMobile ? 'calc(env(safe-area-inset-top, 0px) + 16px)' : 16 }}>
           {/* The Dice — random effect stack */}
           <button
             onClick={handleDiceClick}

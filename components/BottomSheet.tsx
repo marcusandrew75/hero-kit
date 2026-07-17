@@ -1,8 +1,12 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { T } from './ui/HardwareControls';
 
-export const PEEK_HEIGHT = 68;    // px — handle + a little breathing room
+// Handle bar (~30px) + RightPanel's own header row (logo lockup + Reset/
+// Looks/Info, px-5 pt-4 pb-7 ≈ 76px) — needs to actually clear that header,
+// not just approximate it, or the "ヒーロー" subtitle and icon row get
+// clipped mid-way (confirmed on a real device at the previous, shorter value).
+export const PEEK_HEIGHT = 112;
 const EXPANDED_VH = 0.86;  // leaves a sliver of canvas visible at the top
 const TAP_THRESHOLD = 6;   // px of movement below which a gesture counts as a tap, not a drag
 
@@ -28,7 +32,23 @@ const BottomSheet: React.FC<Props> = ({ state, onStateChange, children }) => {
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const dragRef = useRef<{ startClientY: number; startOffset: number; moved: boolean } | null>(null);
 
-  const expandedHeight = typeof window !== 'undefined' ? window.innerHeight * EXPANDED_VH : 600;
+  // iOS Safari's address bar can collapse/expand as the sheet's content
+  // scrolls, changing the true visible height mid-session — window.innerHeight
+  // read once per render can go stale, so this tracks visualViewport (the
+  // most accurate signal iOS exposes) with a plain resize fallback, and
+  // recomputes reactively rather than only whenever some other state change
+  // happens to trigger a re-render.
+  const [viewportHeight, setViewportHeight] = useState(() =>
+    typeof window !== 'undefined' ? (window.visualViewport?.height ?? window.innerHeight) : 600);
+  useEffect(() => {
+    const update = () => setViewportHeight(window.visualViewport?.height ?? window.innerHeight);
+    update();
+    const vv = window.visualViewport;
+    (vv ?? window).addEventListener('resize', update);
+    return () => (vv ?? window).removeEventListener('resize', update);
+  }, []);
+
+  const expandedHeight = viewportHeight * EXPANDED_VH;
   const travel = Math.max(0, expandedHeight - PEEK_HEIGHT);
   const restOffset = state === 'expanded' ? 0 : travel;
 

@@ -39,6 +39,16 @@
       * { box-sizing: border-box; }
       body { font-family: 'Inter', sans-serif; }
 
+      /* iOS Safari auto-zooms the page when a focused text input's font-size
+         is under 16px — the whole app runs at 9-11px text by design (LCD
+         readouts, search fields), so every text input needs an explicit
+         floor on small screens. !important because most of these set their
+         own font-size via inline style, which normally wins over a plain
+         stylesheet rule. */
+      @media (max-width: 768px) {
+        input[type="text"], input:not([type]) { font-size: 16px !important; }
+      }
+
       /* Custom scrollbar — hidden by default */
       ::-webkit-scrollbar { width: 4px; }
       ::-webkit-scrollbar-track { background: transparent; }

@@ -385,7 +385,7 @@ const GallerySection: React.FC<{
             <input type="text" placeholder="Search Pexels…" value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doSearch(query)}
-              className="flex-1 rounded-lg px-3 py-1.5 text-[11px] outline-none border transition-colors"
+              className={`flex-1 rounded-lg px-3 py-1.5 outline-none border transition-colors ${mobile ? 'text-base' : 'text-[11px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => doSearch(query)} disabled={searching}
               className="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-40"
@@ -443,7 +443,7 @@ const GallerySection: React.FC<{
             <input type="text" placeholder="Search Unsplash…" value={uQuery}
               onChange={e => setUQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doUnsplashSearch(uQuery)}
-              className="flex-1 rounded-lg px-3 py-1.5 text-[11px] outline-none border transition-colors"
+              className={`flex-1 rounded-lg px-3 py-1.5 outline-none border transition-colors ${mobile ? 'text-base' : 'text-[11px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => doUnsplashSearch(uQuery)} disabled={uSearching}
               className="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-40"
@@ -611,7 +611,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
             <input value={query} onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && searchPexels(query)}
               placeholder="Search Pexels…"
-              className="flex-1 rounded-lg px-2 py-1.5 text-[10px] outline-none border"
+              className={`flex-1 rounded-lg px-2 py-1.5 outline-none border ${mobile ? 'text-base' : 'text-[10px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => searchPexels(query)} disabled={searching}
               className="px-2.5 py-1.5 text-[9px] font-bold rounded-lg disabled:opacity-40"
@@ -655,7 +655,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
             <input value={uQuery} onChange={e => setUQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && searchUnsplash(uQuery)}
               placeholder="Search Unsplash…"
-              className="flex-1 rounded-lg px-2 py-1.5 text-[10px] outline-none border"
+              className={`flex-1 rounded-lg px-2 py-1.5 outline-none border ${mobile ? 'text-base' : 'text-[10px]'}`}
               style={{ background: T.panel, borderColor: T.border, color: T.text }} />
             <button onClick={() => searchUnsplash(uQuery)} disabled={uSearching}
               className="px-2.5 py-1.5 text-[9px] font-bold rounded-lg disabled:opacity-40"

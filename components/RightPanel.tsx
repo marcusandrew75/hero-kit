@@ -31,10 +31,15 @@ const THUMB_PREVIEW_GAP = 322;   // px from viewport right edge — sidebar widt
 interface ThumbHover { src: string; top: number; }
 
 /** Per-grid hover state: call bind(src) on a thumb's onMouseEnter/onMouseLeave. */
-const useThumbHover = () => {
+// `disabled` skips the whole mechanism on mobile — there's no hover on
+// touch, and this was purely a "look before you choose" enhancement, not a
+// required path to any functionality, so nothing is lost by turning it off
+// rather than trying to invent a touch equivalent.
+const useThumbHover = (disabled = false) => {
   const [hover, setHover] = useState<ThumbHover | null>(null);
   const timerRef = useRef<number>();
   const onEnter = (src: string) => (e: React.MouseEvent<HTMLElement>) => {
+    if (disabled) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const centerY = rect.top + rect.height / 2;
     const top = Math.max(12, Math.min(window.innerHeight - 12 - THUMB_PREVIEW_MAX, centerY - THUMB_PREVIEW_MAX / 2));
@@ -253,7 +258,8 @@ const trackUnsplashDownload = (downloadLocation: string) => {
 const GallerySection: React.FC<{
   imageUrl?: string;
   onChange: (p: Partial<BackgroundState>) => void;
-}> = ({ imageUrl, onChange }) => {
+  mobile?: boolean;
+}> = ({ imageUrl, onChange, mobile }) => {
   const [tab, setTab]           = useState<'curated' | 'pexels' | 'unsplash'>('curated');
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery]       = useState('');
@@ -268,7 +274,7 @@ const GallerySection: React.FC<{
   const [uHasMore, setUHasMore]     = useState(false);
   const [uSearching, setUSearching] = useState(false);
   const [uLastQuery, setULastQuery] = useState('');
-  const { hover, onEnter, onLeave } = useThumbHover();
+  const { hover, onEnter, onLeave } = useThumbHover(mobile);
 
   const fetchPexels = async (q: string, pg: number) => {
     if (!q.trim()) return;
@@ -500,7 +506,7 @@ const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
 
 const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
 
-const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttribution) => void }> = ({ onPick }) => {
+const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttribution) => void; mobile?: boolean }> = ({ onPick, mobile }) => {
   const [tab, setTab]       = useState<'curated'|'pexels'|'unsplash'>('curated');
   const [query, setQuery]   = useState('');
   const [results, setResults] = useState<{ id: number; src: { small: string; medium: string; large2x: string } }[]>([]);
@@ -515,7 +521,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
   const [uPage, setUPage]           = useState(1);
   const [uHasMore, setUHasMore]     = useState(false);
   const [uLastQuery, setULastQuery] = useState('');
-  const { hover, onEnter, onLeave } = useThumbHover();
+  const { hover, onEnter, onLeave } = useThumbHover(mobile);
 
   const handleFile = (file: File) => {
     if (!file.type.startsWith('image/')) return;
@@ -707,7 +713,8 @@ const LayersSection: React.FC<{
   onChange: (layers: ImageLayer[]) => void;
   editingLayerId: string | null;
   onEditLayer: (id: string | null) => void;
-}> = ({ layers, onChange, editingLayerId, onEditLayer }) => {
+  mobile?: boolean;
+}> = ({ layers, onChange, editingLayerId, onEditLayer, mobile }) => {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [erasing, setErasing] = useState<Record<string, boolean>>({});
 
@@ -773,7 +780,7 @@ const LayersSection: React.FC<{
                   <>
                     <div className="relative rounded-lg overflow-hidden h-20 group">
                       <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <div className={`absolute inset-0 bg-black/50 transition-opacity flex items-center justify-center gap-2 ${mobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                         <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">
                           Change
                           <input type="file" accept="image/*" className="hidden"
@@ -812,7 +819,7 @@ const LayersSection: React.FC<{
                     )}
                   </>
                 ) : (
-                  <LayerPicker onPick={async (url, attribution) => {
+                  <LayerPicker mobile={mobile} onPick={async (url, attribution) => {
                     const naturalAspect = await loadNaturalAspect(url);
                     update(layer.id, { imageUrl: url, naturalAspect, attribution, x: 0, y: 0, width: 1, height: 1 });
                   }} />
@@ -1225,9 +1232,10 @@ interface RightPanelProps {
   onResetEffects: () => void;
   editingLayerId: string | null;
   onEditLayer: (id: string | null) => void;
+  mobile?: boolean;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile }) => {
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
@@ -1298,10 +1306,10 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
   return (
     <div
-      className="w-[310px] shrink-0 flex flex-col h-full"
+      className={`${mobile ? 'w-full' : 'w-[310px]'} shrink-0 flex flex-col h-full`}
       style={{
         background: T.bg,
-        borderLeft: `1px solid ${T.border}`,
+        borderLeft: mobile ? undefined : `1px solid ${T.border}`,
         overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none',
       }}
     >
@@ -1402,7 +1410,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                   ) : (
                     <img src={state.imageUrl} alt="" className="w-full h-full object-cover" />
                   )}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <div className={`absolute inset-0 bg-black/50 transition-opacity flex items-center justify-center gap-2 ${mobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                     <label className="cursor-pointer px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">
                       Change
                       <input type="file" accept="image/*,video/*" className="hidden"
@@ -1500,14 +1508,14 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
         {/* ── Gallery ────────────────────────────────────────────────────── */}
         <HardwarePanel label="Gallery" number={3}>
-          <GallerySection imageUrl={state.imageUrl} onChange={onChange} />
+          <GallerySection imageUrl={state.imageUrl} onChange={onChange} mobile={mobile} />
         </HardwarePanel>
 
         {/* ── Layers ─────────────────────────────────────────────────────── */}
         {hasSource && (
           <HardwarePanel label="Layers" number={4}>
             <LayersSection layers={state.layers ?? []} onChange={layers => set({ layers })}
-              editingLayerId={editingLayerId} onEditLayer={onEditLayer} />
+              editingLayerId={editingLayerId} onEditLayer={onEditLayer} mobile={mobile} />
           </HardwarePanel>
         )}
 

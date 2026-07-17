@@ -8,6 +8,8 @@ import CanvasDropZone from './components/CanvasDropZone';
 import LayerTransformOverlay from './components/LayerTransformOverlay';
 import LandingPage from './components/LandingPage';
 import TeamsPage from './components/TeamsPage';
+import BottomSheet, { PEEK_HEIGHT } from './components/BottomSheet';
+import { useIsMobile } from './hooks/useIsMobile';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 import { rollDice } from './dice';
@@ -85,6 +87,8 @@ const App: React.FC = () => {
   });
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
+  const isMobile = useIsMobile();
+  const [sheetState, setSheetState]       = useState<'peek' | 'expanded'>('peek');
   const [aspectRatio, setAspectRatio]     = useState('free');
   const [boxSize, setBoxSize]             = useState<{ w: number; h: number } | null>(null);
   const [hideEffects, setHideEffects]     = useState(false);
@@ -393,13 +397,18 @@ const App: React.FC = () => {
           })()}
         </div>
 
-        {/* Aspect ratio selector — top centre */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[130] flex items-center bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-lg">
+        {/* Aspect ratio selector — top centre on desktop; on mobile it's
+            left-anchored with horizontal scroll instead of dead-centered, so
+            it doesn't compete with the top-right cluster for the same space
+            on a narrow viewport. */}
+        <div className={`absolute top-4 z-[130] flex items-center bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 gap-0.5 shadow-lg ${
+          isMobile ? 'left-4 right-[124px] overflow-x-auto' : 'left-1/2 -translate-x-1/2'
+        }`}>
           {RATIOS.map(r => (
             <button
               key={r.id}
               onClick={() => setAspectRatio(r.id)}
-              className={`px-3 py-[6px] rounded-full text-[11px] font-medium transition-all ${
+              className={`px-3 py-[6px] rounded-full text-[11px] font-medium transition-all shrink-0 ${
                 aspectRatio === r.id
                   ? 'bg-[#1a1917] text-[#f2f0eb] shadow-sm'
                   : 'text-black/40 hover:text-black/80'
@@ -439,18 +448,26 @@ const App: React.FC = () => {
             <i className="ph ph-eye text-sm" />
           </button>
 
-          {/* Fullscreen toggle */}
-          <button
-            onClick={() => setIsFullscreen(v => !v)}
-            title={isFullscreen ? 'Show panel' : 'Hide panel'}
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm border border-black/10 text-black/40 hover:text-black/80 hover:border-black/20 transition-all"
-          >
-            <i className={`ph ${isFullscreen ? 'ph-sidebar-simple' : 'ph-arrows-out'} text-sm`} />
-          </button>
+          {/* Fullscreen toggle — desktop only. On mobile the canvas is
+              already full-bleed with the panel as an overlay sheet, so
+              there's no "hide the sidebar" state for this to control. */}
+          {!isMobile && (
+            <button
+              onClick={() => setIsFullscreen(v => !v)}
+              title={isFullscreen ? 'Show panel' : 'Hide panel'}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm border border-black/10 text-black/40 hover:text-black/80 hover:border-black/20 transition-all"
+            >
+              <i className={`ph ${isFullscreen ? 'ph-sidebar-simple' : 'ph-arrows-out'} text-sm`} />
+            </button>
+          )}
         </div>
 
-        {/* Floating preview toggle */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1.5 bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 shadow-lg">
+        {/* Floating preview toggle — on mobile it needs to sit above the
+            peeked sheet rather than overlap it, and its expanded state (which
+            grows quite a bit wider) needs to stay on-screen on a narrow
+            viewport rather than overflow off the edge. */}
+        <div className="absolute left-1/2 -translate-x-1/2 z-[110] flex items-center gap-1.5 bg-white/80 backdrop-blur-md border border-black/10 rounded-full px-1.5 py-1.5 shadow-lg max-w-[calc(100vw-24px)] overflow-x-auto"
+          style={{ bottom: isMobile ? PEEK_HEIGHT + 12 : 24 }}>
 
           {/* Toggle */}
           <button
@@ -545,17 +562,26 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Right panel — GPU layer keeps the compositor texture alive during
-          the width animation so no per-frame repaint. height:100% restores
-          the h-full chain that h-screen → flex → panel depends on. */}
-      <div
-        style={{ width: isFullscreen ? 0 : 310, transition: 'width 280ms cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0 }}
-      >
-        <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
+      {/* Right panel — on mobile the canvas stays full-bleed and the panel
+          floats over it as a bottom sheet instead of reflowing a side
+          column; on desktop it's the existing fixed-width sidebar whose GPU
+          layer keeps the compositor texture alive during the width
+          animation so no per-frame repaint. */}
+      {isMobile ? (
+        <BottomSheet state={sheetState} onStateChange={setSheetState}>
           <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
-            editingLayerId={editingLayerId} onEditLayer={handleEditLayer} />
+            editingLayerId={editingLayerId} onEditLayer={handleEditLayer} mobile />
+        </BottomSheet>
+      ) : (
+        <div
+          style={{ width: isFullscreen ? 0 : 310, transition: 'width 280ms cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0 }}
+        >
+          <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
+            <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
+              editingLayerId={editingLayerId} onEditLayer={handleEditLayer} />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Looks panel modal */}
       {showLooks && (

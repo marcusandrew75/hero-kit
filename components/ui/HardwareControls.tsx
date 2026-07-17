@@ -312,10 +312,15 @@ export const KnobSlider: React.FC<{
   // CSS --rotation: maps SVG angle back to CSS rotate() (0° = up)
   const cssRotation = `${(curDeg - 270).toFixed(1)}deg`;
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
+  // Pointer Events (not mouse-only) so this works on touch — mobile browsers
+  // don't reliably fire synthetic mousemove during a touch-drag. setPointerCapture
+  // keeps the drag tracking once the finger travels outside the knob's small
+  // bounds, matching the pattern already established in LayerTransformOverlay.
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = { y: e.clientY, val: value };
-    const onMove = (ev: MouseEvent) => {
+    const onMove = (ev: PointerEvent) => {
       if (!dragRef.current) return;
       const delta = (dragRef.current.y - ev.clientY) / DRAG_PX;
       const raw = dragRef.current.val + delta * (max - min);
@@ -325,11 +330,15 @@ export const KnobSlider: React.FC<{
     };
     const onUp = () => {
       dragRef.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    // Touch drags (unlike mouse) can be interrupted mid-gesture by the OS
+    // (incoming call, edge-swipe nav) — without this the drag state can stick.
+    window.addEventListener('pointercancel', onUp);
   }, [value, min, max, step, decimals, DRAG_PX, onChange]);
 
   // Tick stroke widths scale with size
@@ -358,8 +367,8 @@ export const KnobSlider: React.FC<{
       style={{ width: BOX, gap: sm ? 4 : 6 }}>
       {/* Knob + arc track composite */}
       <div
-        style={{ position: 'relative', width: BOX, height: BOX }}
-        onMouseDown={onMouseDown}
+        style={{ position: 'relative', width: BOX, height: BOX, touchAction: 'none' }}
+        onPointerDown={onPointerDown}
         title={`${label}: ${value.toFixed(decimals)}${unit} — drag up/down`}
       >
         {/* SVG arc track — sits behind the .knob div */}

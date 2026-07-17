@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.8', date: '16 Jul 2026',
+    items: [
+      'Added: HeroKit now works on mobile — the sidebar becomes a drag-to-expand bottom sheet, the Grain & Texture knobs (previously mouse-only and completely unusable on touch) now support touch dragging, and hover-only controls like the Change/Clear buttons on thumbnails are now always visible on a phone instead of requiring a hover that doesn\'t exist on touch',
+    ],
+  },
+  {
     version: '3.7', date: '16 Jul 2026',
     items: [
       'Added: the Dice — a shuffle button beside the canvas that rolls a random, tasteful effect stack from the full effects rack. A genuine discovery mechanic for effects you might never have tried, not just a fixed set of looks. A big rotating die shows over the canvas while the new stack computes, so it\'s obvious something\'s happening',

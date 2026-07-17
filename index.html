@@ -46,6 +46,26 @@
          own font-size via inline style, which normally wins over a plain
          stylesheet rule. */
       @media (max-width: 768px) {
+        /* Even with body's own overflow:hidden further down, iOS Safari can
+           still scroll the WHOLE DOCUMENT to bring a focused input into view
+           when that input lives inside a nested scrollable container (like
+           the mobile sheet's own internal scroll) — overflow:hidden on body
+           alone doesn't reliably stop this. Pinning html/body with
+           position:fixed removes the document's ability to scroll at all,
+           forcing the browser's focus-scroll behavior into the one
+           container that's actually meant to handle it (RightPanel's own
+           overflowY:auto) — the standard fix for "the whole page
+           shifts/the top chrome disappears when a nested field is focused"
+           on iOS. Scoped to mobile only — the desktop layout never relied
+           on document-level scroll either way, so this changes nothing
+           there, but there's no reason to touch global page behavior for a
+           fix that's purely about the mobile keyboard. */
+        html, body {
+          position: fixed;
+          inset: 0;
+          overflow: hidden;
+          overscroll-behavior: none;
+        }
         input[type="text"], input:not([type]) { font-size: 16px !important; }
         /* Focusing a text input opens the iOS keyboard, which shows its own
            toolbar (prev/next field carets + Done) directly above it — the

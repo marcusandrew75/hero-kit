@@ -7,6 +7,7 @@ import SpotBlurMap from './SpotBlurMap';
 import EffectMaskPad from './EffectMaskPad';
 import DocsPanel from './DocsPanel';
 import { generateBackground } from '../services/generate';
+import { useKeyboardOpen } from '../hooks/useKeyboardOpen';
 import {
   HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T, TabBar,
 } from './ui/HardwareControls';
@@ -1236,6 +1237,7 @@ interface RightPanelProps {
 }
 
 const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile }) => {
+  const keyboardOpen = useKeyboardOpen();
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
@@ -2258,6 +2260,16 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           REV. 1.0
         </span>
       </div>
+
+      {/* Reserves real scrollable room below the content whenever a text
+          input is focused — visualViewport-based sizing already shrinks the
+          sheet to fit above the keyboard itself, but doesn't know about the
+          keyboard's own accessory bar (prev/next/Done toolbar) sitting above
+          it, so without this the focused field can still end up scrolled to
+          just short of fully clear. Only relevant once the whole document is
+          pinned from scrolling (index.html) so this scroll container is the
+          one actually handling the browser's native scroll-into-view. */}
+      {mobile && keyboardOpen && <div style={{ height: 160 }} aria-hidden />}
     </div>
   );
 };

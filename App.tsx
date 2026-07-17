@@ -10,6 +10,7 @@ import LandingPage from './components/LandingPage';
 import TeamsPage from './components/TeamsPage';
 import BottomSheet, { PEEK_HEIGHT } from './components/BottomSheet';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useVisualViewport } from './hooks/useVisualViewport';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 import { rollDice } from './dice';
@@ -88,6 +89,7 @@ const App: React.FC = () => {
   const [showLooks, setShowLooks]         = useState(false);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const isMobile = useIsMobile();
+  const { offsetTop: viewportOffsetTop } = useVisualViewport();
   const [sheetState, setSheetState]       = useState<'peek' | 'expanded'>('peek');
   const [aspectRatio, setAspectRatio]     = useState('free');
   const [ratioMenuOpen, setRatioMenuOpen] = useState(false);
@@ -412,7 +414,7 @@ const App: React.FC = () => {
             standard, discoverable mobile pattern than a hidden horizontal
             scroll. */}
         {isMobile ? (
-          <div className="absolute z-[130]" style={{ top: 'calc(env(safe-area-inset-top, 0px) + 16px)', left: 16 }}>
+          <div className="absolute z-[130]" style={{ top: `calc(env(safe-area-inset-top, 0px) + ${viewportOffsetTop + 16}px)`, left: 16 }}>
             <button
               onClick={() => setRatioMenuOpen(v => !v)}
               className="flex items-center gap-1.5 bg-white/80 backdrop-blur-md border border-black/10 rounded-full pl-3 pr-2.5 py-1.5 text-[11px] font-medium text-black/70 shadow-lg"
@@ -454,10 +456,13 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Top-right button cluster — safe-area-aware top offset on mobile
-            so it clears the iOS toolbar instead of sitting flush against it. */}
+        {/* Top-right button cluster — safe-area-aware top offset on mobile,
+            plus visualViewport.offsetTop (see hooks/useVisualViewport) so it
+            tracks Safari's own collapsing/expanding toolbar rather than
+            sitting at a fixed offset that can end up partially behind it
+            mid-transition. */}
         <div className="absolute right-4 z-[130] flex items-center gap-2"
-          style={{ top: isMobile ? 'calc(env(safe-area-inset-top, 0px) + 16px)' : 16 }}>
+          style={{ top: isMobile ? `calc(env(safe-area-inset-top, 0px) + ${viewportOffsetTop + 16}px)` : 16 }}>
           {/* The Dice — random effect stack */}
           <button
             onClick={handleDiceClick}

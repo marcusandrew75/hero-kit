@@ -47,6 +47,14 @@
          stylesheet rule. */
       @media (max-width: 768px) {
         input[type="text"], input:not([type]) { font-size: 16px !important; }
+        /* Focusing a text input opens the iOS keyboard, which shows its own
+           toolbar (prev/next field carets + Done) directly above it — the
+           browser's native "scroll the focused input into view" doesn't
+           know to leave room for that toolbar, so the input ends up hidden
+           behind it. scroll-margin-bottom tells that scroll-into-view
+           behavior to leave a gap, without needing to fight the keyboard's
+           own resize/reflow in JS. */
+        input[type="text"], input:not([type]) { scroll-margin-bottom: 64px; }
       }
 
       /* Custom scrollbar — hidden by default */

@@ -10,34 +10,6 @@ interface Props {
   minimal?: boolean;
 }
 
-// Single curated "HeroKit Demo" — image 029 + golden-hour grade + dispersion + spot blur
-const DEMO: Partial<BackgroundState> = {
-  bgColor: '#050508',
-  imageUrl: '/super-visuals-ahmed-hassan/AI_Bg_029.jpg',
-  videoUrl: undefined,
-  imageAttribution: undefined,
-  imageFilter: 'none', imageBlur: 0, imageMask: 'radial',
-  imageOpacity: 1, tintColor: '#6366f1',
-  chromaticAberration: 0, ditherStyle: 'none', ditherScale: 1,
-  atmosphereStyle: 'none',
-  noiseOpacity: 0.20, noiseColor: '#ffffff',
-  patternStyle: 'plus', patternOpacity: 0.15,
-  patternColor: '#ffffff', patternBlendMode: 'overlay',
-  overlayOpacity: 0, vignetteStrength: 0.35, effectsOpacity: 1,
-  ambientLightIntensity: 0, ambientLightColor: '#6366f1', ambientLightPosition: 'tr',
-  colorGradeEnabled: true, colorGradePreset: 'golden-hour', colorGradeStrength: 1,
-  dispersionEnabled: true, dispersionStrength: 142, dispersionThreshold: 26,
-  dispersionDirection: 'up', dispersionSpread: 0.34,
-  spotBlurEnabled: true, spotBlurRadius: 18,
-  blurSpots: [
-    { id: 'demo-spot-1', x: 0.486, y: 0.477, radius: 0.6 },
-    { id: 'demo-spot-2', x: 0.642, y: 0.880, radius: 0.6 },
-    { id: 'demo-spot-3', x: 0.277, y: 0.888, radius: 0.48 },
-  ],
-  halftoneEnabled: false, pixelSortEnabled: false,
-  channelSmearEnabled: false, warpEnabled: false, motionBlurEnabled: false,
-};
-
 const CanvasDropZone: React.FC<Props> = ({ onChange, minimal = false }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -58,8 +30,6 @@ const CanvasDropZone: React.FC<Props> = ({ onChange, minimal = false }) => {
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   };
-
-  const handleDemo = () => onChange(DEMO);
 
   return (
     <div
@@ -97,17 +67,6 @@ const CanvasDropZone: React.FC<Props> = ({ onChange, minimal = false }) => {
             or click to browse / paste from clipboard
           </p>
         </div>
-      )}
-
-      {/* Inspire Me */}
-      {!minimal && (
-        <button
-          onClick={e => { e.stopPropagation(); handleDemo(); }}
-          className="flex items-center gap-2.5 px-6 py-3 rounded-full border border-black/12 text-[#6b6860] text-sm font-medium hover:text-[#1a1917] hover:border-black/25 hover:bg-black/4 transition-all"
-        >
-          <i className="ph ph-sparkle text-base" />
-          Show me what's possible
-        </button>
       )}
 
       <input

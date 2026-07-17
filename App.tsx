@@ -10,10 +10,14 @@ import LandingPage from './components/LandingPage';
 import TeamsPage from './components/TeamsPage';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
+import { rollDice } from './dice';
 
 export { DEFAULT };
 
 // ─── App ──────────────────────────────────────────────────────────────────────
+
+// Phosphor's dice icons are named by word (ph-dice-five), not numeral.
+const DICE_FACE_WORDS = ['one', 'two', 'three', 'four', 'five', 'six'];
 
 const RATIOS = [
   { id: 'free',  label: 'Free',  css: ''       },
@@ -220,6 +224,70 @@ const App: React.FC = () => {
   const handleResetEffects = () =>
     setState(prev => ({ ...DEFAULT, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl, imageAttribution: prev.imageAttribution }));
 
+  // The Dice — random effect stack. Full reset to DEFAULT first (so nothing
+  // from a prior roll lingers), then the roll's patch on top, then re-pin
+  // media + layers back to prev — Dice is about the per-pixel effect stack,
+  // not the source image or the compositional Layer 2/3 images someone's
+  // placed. lastDiceHero avoids repeating the same hero twice in a row.
+  const lastDiceHero = useRef<string>();
+  const handleDiceRoll = () => {
+    const { patch, hero } = rollDice(lastDiceHero.current);
+    lastDiceHero.current = hero;
+    setState(prev => ({
+      ...DEFAULT, ...patch,
+      imageUrl: prev.imageUrl, videoUrl: prev.videoUrl, imageAttribution: prev.imageAttribution,
+      layers: prev.layers,
+    }));
+  };
+
+  // Dice roll lifecycle: spin the button icon through a few faces first (a
+  // snap-instant change wouldn't read as a "roll"), then keep the larger
+  // centered overlay up until the canvas actually finishes recomputing the
+  // new effect stack — canvasProcessing is Canvas's own real pipeline signal
+  // (Canvas.tsx's ProcessedImageCanvas), so this tracks genuine work rather
+  // than a fixed guess at how long a given effect stack takes to compute.
+  const [diceFace, setDiceFace] = useState(5);
+  const [dicePhase, setDicePhase] = useState<'idle' | 'spinning' | 'processing'>('idle');
+  const [canvasProcessing, setCanvasProcessing] = useState(false);
+  const diceKickoff = useRef<ReturnType<typeof setTimeout>>();
+  const diceSafety = useRef<ReturnType<typeof setTimeout>>();
+  const sawProcessing = useRef(false);
+
+  useEffect(() => () => { clearTimeout(diceKickoff.current); clearTimeout(diceSafety.current); }, []);
+
+  // Keep cycling the face for as long as the overlay is up (spin + wait) —
+  // most die faces are close to rotationally symmetric, so a single fixed
+  // face just spinning/pulsing barely reads as motion; changing which face
+  // shows makes it unmistakable.
+  useEffect(() => {
+    if (dicePhase === 'idle') return;
+    const t = setInterval(() => setDiceFace(1 + Math.floor(Math.random() * 6)), 90);
+    return () => clearInterval(t);
+  }, [dicePhase]);
+
+  useEffect(() => {
+    if (dicePhase !== 'processing') return;
+    if (canvasProcessing) {
+      sawProcessing.current = true;
+    } else if (sawProcessing.current) {
+      sawProcessing.current = false;
+      clearTimeout(diceSafety.current);
+      setDicePhase('idle');
+    }
+  }, [canvasProcessing, dicePhase]);
+
+  const handleDiceClick = () => {
+    if (dicePhase !== 'idle') return;
+    setDicePhase('spinning');
+    diceKickoff.current = setTimeout(() => {
+      handleDiceRoll();
+      setDicePhase('processing');
+      // Safety net — don't leave the overlay stuck if processing never
+      // reports back (e.g. a roll that somehow needs no pipeline pass).
+      diceSafety.current = setTimeout(() => setDicePhase('idle'), 2500);
+    }, 480);
+  };
+
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
   // /teams — B2B marketing page (served via the vercel.json SPA rewrite;
@@ -260,7 +328,25 @@ const App: React.FC = () => {
               : { position: 'absolute', inset: 0 }
           }
         >
-          <Canvas state={state} hideEffects={hideEffects} />
+          <Canvas state={state} hideEffects={hideEffects} onProcessingChange={setCanvasProcessing} />
+
+          {/* Dice roll — big rotating, slowly pulsing die centered on the
+              canvas while the new effect stack spins in, so it's obvious
+              something's happening rather than the canvas just silently
+              changing. Rotation (animate-spin) and the size pulse are two
+              separate nested elements so each keeps its own easing/speed
+              instead of compromising both into a single keyframe — and the
+              face itself keeps changing (diceFace), since most die faces
+              are close to rotationally symmetric and a single fixed face
+              just spinning barely reads as motion on its own. */}
+          {dicePhase !== 'idle' && (
+            <div className="absolute inset-0 z-[135] flex items-center justify-center pointer-events-none bg-black/10">
+              <div style={{ animation: 'herokit-dice-pulse 1.8s ease-in-out infinite' }}>
+                <i className={`ph-bold ph-dice-${DICE_FACE_WORDS[diceFace - 1]} text-white animate-spin`}
+                  style={{ fontSize: 72, filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.4))' }} />
+              </div>
+            </div>
+          )}
 
           {/* Drop zone — shown when no image/video loaded. Stays interactive
               (drag/drop, click-to-browse) even when an atmosphere effect is
@@ -326,6 +412,16 @@ const App: React.FC = () => {
 
         {/* Top-right button cluster */}
         <div className="absolute top-4 right-4 z-[130] flex items-center gap-2">
+          {/* The Dice — random effect stack */}
+          <button
+            onClick={handleDiceClick}
+            title="Roll the dice — random effect stack"
+            disabled={!hasSource || dicePhase !== 'idle'}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm border border-black/10 text-black/40 hover:text-black/80 hover:border-black/20 transition-all disabled:opacity-30"
+          >
+            <i className={`ph-bold ph-dice-${DICE_FACE_WORDS[(dicePhase !== 'idle' ? diceFace : 5) - 1]} text-lg`} />
+          </button>
+
           {/* Hold to bypass all effects */}
           <button
             title="Hold to bypass effects"

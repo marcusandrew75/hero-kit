@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.7', date: '16 Jul 2026',
+    items: [
+      'Added: the Dice — a shuffle button beside the canvas that rolls a random, tasteful effect stack from the full effects rack. A genuine discovery mechanic for effects you might never have tried, not just a fixed set of looks. A big rotating die shows over the canvas while the new stack computes, so it\'s obvious something\'s happening',
+    ],
+  },
+  {
     version: '3.6', date: '16 Jul 2026',
     items: [
       'Added: Unsplash as a third image source, alongside Curated and Pexels — searchable from both the Source panel and the Layer 2/3 picker, with a persistent photographer credit shown under the thumbnail for as long as that photo is in use',

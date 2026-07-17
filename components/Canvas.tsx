@@ -2180,6 +2180,7 @@ interface ProcessedImageProps {
   spotBlurEnabled: boolean;
   spotBlurRadius: number;
   blurSpots: SpotData[];
+  onProcessingChange?: (processing: boolean) => void;
 }
 
 const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
@@ -2208,11 +2209,13 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     pixelSortEnabled, pixelSortThreshold, pixelSortDirection, pixelSortMode,
     motionBlurEnabled, motionBlurType, motionBlurStrength,
     spotBlurEnabled, spotBlurRadius, blurSpots,
+    onProcessingChange,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef   = useRef<HTMLDivElement>(null);
   const [processing, setProcessing] = React.useState(false);
+  useEffect(() => { onProcessingChange?.(processing); }, [processing]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2544,9 +2547,10 @@ const NoiseCanvas: React.FC<{ opacity: number; color: string }> = React.memo(({ 
 interface CanvasProps {
   state: BackgroundState;
   hideEffects?: boolean;
+  onProcessingChange?: (processing: boolean) => void;
 }
 
-const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
+const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessingChange }) => {
   const {
     bgColor, maskColor, imageUrl, videoUrl,
     imageFilter, imageBlur, imageMask, imageOpacity, imageFlipH, imageFlipV, tintColor, chromaticAberration,
@@ -2690,6 +2694,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false }) => {
               <div className="absolute inset-0" style={{ filter: cssFilter }}>
               <ProcessedImageCanvas
                 imageUrl={imageUrl}
+                onProcessingChange={onProcessingChange}
                 imageFlipH={imageFlipH ?? false}
                 imageFlipV={imageFlipV ?? false}
                 colorGradeEnabled={colorGradeEnabled ?? false}

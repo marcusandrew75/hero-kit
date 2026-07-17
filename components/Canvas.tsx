@@ -2019,7 +2019,14 @@ const applyMotionBlur = (
   const steps = Math.max(4, Math.ceil(strength * 0.8));
 
   for (let i = 0; i < steps; i++) {
-    ctx.globalAlpha = 1 / steps;
+    // Running-average weight, not a constant 1/steps — repeated source-over
+    // compositing at a constant alpha onto a transparent canvas doesn't sum
+    // to full opacity (it converges to ~63% even where every layer covers a
+    // pixel), which let the canvas's own background bleed through as a
+    // whitish film. Drawing the first pass fully opaque and blending each
+    // later pass in at 1/(i+1) keeps the result fully opaque throughout
+    // while still averaging every sample equally.
+    ctx.globalAlpha = 1 / (i + 1);
     if (type === 'horizontal') {
       const offset = -strength / 2 + (i / (steps - 1)) * strength;
       ctx.drawImage(src, offset, 0, w, h);

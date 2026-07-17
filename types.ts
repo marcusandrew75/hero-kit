@@ -52,6 +52,7 @@ export interface BackgroundState {
   maskColor: string;    // color revealed through Mask fades — independent of bgColor
   imageUrl?: string;
   videoUrl?: string;
+  imageAttribution?: ImageAttribution;
 
   // Image / video processing
   imageFilter: ImageFilter;
@@ -236,9 +237,21 @@ export interface BackgroundState {
 
 export type LayerBlendMode = 'screen' | 'multiply' | 'overlay' | 'soft-light' | 'difference' | 'luminosity';
 
+// Unsplash requires attribution + a link to the photographer's profile
+// wherever a photo is actually used, not just while browsing — this rides
+// alongside imageUrl/layer.imageUrl and must be reset/preserved in lockstep
+// with it (cleared on a new image, carried forward when the image itself is
+// unchanged, e.g. applying a Look).
+export interface ImageAttribution {
+  source: 'unsplash';
+  name: string;
+  profileUrl: string; // photographer's Unsplash profile — UTM added at render time
+}
+
 export interface ImageLayer {
   id: string;
   imageUrl?: string;
+  attribution?: ImageAttribution;
   blendMode: LayerBlendMode;
   opacity: number; // 0–1
   // Position/size within the canvas — all optional and default to a full

@@ -34,13 +34,15 @@ const HISTORY_MAX = 25;
 
 const saveHistoryEntry = (s: BackgroundState) => {
   try {
-    const { imageUrl: _i, videoUrl: _v, layers, ...rest } = s;
+    const { imageUrl: _i, videoUrl: _v, imageAttribution: _a, layers, ...rest } = s;
     // Layer images are uploaded as base64 data-URIs — leaving them in means every
     // 3-second auto-save writes megabytes to localStorage, which silently exhausts
     // the origin's storage quota within minutes and then blocks ALL further writes,
     // including Looks saves (shared quota). History only needs to restore effect
-    // settings, not re-embed the actual layer image data.
-    const strippedLayers = layers?.map(({ imageUrl: _li, ...l }) => l);
+    // settings, not re-embed the actual layer image data. Attribution is stripped
+    // alongside its image for the same reason a Look strips it (see LooksPanel's
+    // stripMedia) — otherwise it'd be orphaned data disconnected from any photo.
+    const strippedLayers = layers?.map(({ imageUrl: _li, attribution: _la, ...l }) => l);
     const entry: HistoryEntry = { id: crypto.randomUUID(), state: { ...rest, layers: strippedLayers }, timestamp: Date.now() };
     const prev = loadHistory();
     localStorage.setItem('herokit-history', JSON.stringify([entry, ...prev].slice(0, HISTORY_MAX)));
@@ -111,7 +113,7 @@ const App: React.FC = () => {
           const file = item.getAsFile();
           if (!file) continue;
           const r = new FileReader();
-          r.onload = ev => setState(prev => ({ ...prev, imageUrl: ev.target?.result as string, videoUrl: undefined }));
+          r.onload = ev => setState(prev => ({ ...prev, imageUrl: ev.target?.result as string, videoUrl: undefined, imageAttribution: undefined }));
           r.readAsDataURL(file);
           break;
         }
@@ -212,11 +214,11 @@ const App: React.FC = () => {
   };
 
   const handleApplyLook = (patch: Partial<BackgroundState>) =>
-    setState(prev => ({ ...prev, ...patch, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl }));
+    setState(prev => ({ ...prev, ...patch, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl, imageAttribution: prev.imageAttribution }));
 
   // Reset all effects to defaults, keep the source image
   const handleResetEffects = () =>
-    setState(prev => ({ ...DEFAULT, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl }));
+    setState(prev => ({ ...DEFAULT, imageUrl: prev.imageUrl, videoUrl: prev.videoUrl, imageAttribution: prev.imageAttribution }));
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
 

@@ -8,12 +8,12 @@ import EffectMaskPad from './EffectMaskPad';
 import DocsPanel from './DocsPanel';
 import { generateBackground } from '../services/generate';
 import {
-  HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T,
+  HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T, TabBar,
 } from './ui/HardwareControls';
 import {
   BackgroundState, PatternStyle, ImageFilter, ImageMask,
   DitherStyle, ExportFormat, ExportResolution,
-  AmbientPosition, ImageLayer, LayerBlendMode, AtmosphereStyle,
+  AmbientPosition, ImageLayer, LayerBlendMode, AtmosphereStyle, ImageAttribution,
 } from '../types';
 
 // ─── Local primitives ────────────────────────────────────────────────────────
@@ -229,13 +229,32 @@ interface PexelsPhoto {
   src: { small: string; medium: string; large2x: string };
 }
 
+// Trimmed shape returned by api/unsplash-search.ts (already mapped down from
+// Unsplash's raw response server-side).
+interface UnsplashPhoto {
+  id: string; alt: string;
+  urls: { small: string; regular: string };
+  user: { name: string; profileUrl: string };
+  downloadLocation: string;
+}
+
+// Unsplash's mandatory "download" tracking ping — must fire the moment a
+// user actually selects a photo, not just when it's displayed in search
+// results. Shared by GallerySection and LayerPicker so it's wired in exactly
+// one place rather than risking one call site remembering it and the other
+// forgetting. Fire-and-forget: the response isn't needed, and a failure here
+// shouldn't block the user from using the photo they just picked.
+const trackUnsplashDownload = (downloadLocation: string) => {
+  fetch(`/api/unsplash-download?url=${encodeURIComponent(downloadLocation)}`).catch(() => {});
+};
+
 // ─── Gallery section ─────────────────────────────────────────────────────────
 
 const GallerySection: React.FC<{
   imageUrl?: string;
   onChange: (p: Partial<BackgroundState>) => void;
 }> = ({ imageUrl, onChange }) => {
-  const [tab, setTab]           = useState<'curated' | 'pexels'>('curated');
+  const [tab, setTab]           = useState<'curated' | 'pexels' | 'unsplash'>('curated');
   const [expanded, setExpanded] = useState(false);
   const [query, setQuery]       = useState('');
   const [results, setResults]   = useState<PexelsPhoto[]>([]);
@@ -243,6 +262,12 @@ const GallerySection: React.FC<{
   const [hasMore, setHasMore]   = useState(false);
   const [searching, setSearching] = useState(false);
   const [lastQuery, setLastQuery] = useState('');
+  const [uQuery, setUQuery]         = useState('');
+  const [uResults, setUResults]     = useState<UnsplashPhoto[]>([]);
+  const [uPage, setUPage]           = useState(1);
+  const [uHasMore, setUHasMore]     = useState(false);
+  const [uSearching, setUSearching] = useState(false);
+  const [uLastQuery, setULastQuery] = useState('');
   const { hover, onEnter, onLeave } = useThumbHover();
 
   const fetchPexels = async (q: string, pg: number) => {
@@ -261,7 +286,21 @@ const GallerySection: React.FC<{
     } catch { /* silent */ } finally { setSearching(false); }
   };
 
+  const fetchUnsplash = async (q: string, pg: number) => {
+    if (!q.trim()) return;
+    setUSearching(true);
+    try {
+      const res = await fetch(`/api/unsplash-search?query=${encodeURIComponent(q)}&page=${pg}`);
+      const data = await res.json();
+      const photos: UnsplashPhoto[] = data.results ?? [];
+      setUResults(pg === 1 ? photos : prev => [...prev, ...photos]);
+      setUHasMore(!!data.hasMore);
+      setULastQuery(q); setUPage(pg);
+    } catch { /* silent */ } finally { setUSearching(false); }
+  };
+
   const doSearch = (q: string) => { setQuery(q); setResults([]); fetchPexels(q, 1); };
+  const doUnsplashSearch = (q: string) => { setUQuery(q); setUResults([]); fetchUnsplash(q, 1); };
   const visible  = expanded ? GALLERY : GALLERY.slice(0, GALLERY_INITIAL);
 
   const thumbCls = (active: boolean) =>
@@ -271,60 +310,33 @@ const GallerySection: React.FC<{
 
   return (
     <div className="space-y-2.5">
-      {/* Tab bar — sliding pill, same technique as HwSegment */}
-      <div className="flex items-center justify-between">
-        <div
-          className="relative flex rounded-full border"
-          style={{
-            background: T.panel, borderColor: T.border,
-            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)',
-            padding: 3,
-          }}
-        >
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute', top: 3, bottom: 3,
-              left: tab === 'curated' ? 'calc(3px + 0 * ((100% - 6px) / 2))' : 'calc(3px + 1 * ((100% - 6px) / 2))',
-              width: 'calc((100% - 6px) / 2)',
-              background: T.surface, borderRadius: 9999,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-              transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-              pointerEvents: 'none',
-            }}
-          />
-          {(['curated','pexels'] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="leading-none"
-              style={{
-                position: 'relative', zIndex: 1,
-                padding: '5px 14px', fontSize: 10, fontWeight: 600,
-                borderRadius: 9999, background: 'transparent', border: 'none', cursor: 'pointer',
-                color: tab === t ? T.text : T.muted,
-                transition: 'color 0.22s ease',
-              }}>
-              {t === 'curated' ? 'Curated' : 'Pexels'}
-            </button>
-          ))}
-        </div>
-        {tab === 'curated' && (
-          <p className="text-[9px]" style={{ color: T.dim }}>
-            By <a href="https://x.com/uihssn" target="_blank" rel="noopener noreferrer"
-              className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>Ahmed Hassan</a>
-          </p>
-        )}
-        {tab === 'pexels' && (
-          <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer"
-            className="text-[9px] hover:opacity-70 transition-opacity" style={{ color: T.muted }}>Photos by Pexels</a>
-        )}
-      </div>
+      {/* Tab bar — sliding pill */}
+      <TabBar
+        options={[{ id: 'curated', label: 'Curated' }, { id: 'pexels', label: 'Pexels' }, { id: 'unsplash', label: 'Unsplash' }]}
+        value={tab} onChange={v => setTab(v as 'curated' | 'pexels' | 'unsplash')}
+        size="sm"
+      />
+      {tab === 'curated' && (
+        <p className="text-[9px] text-right" style={{ color: T.dim }}>
+          By <a href="https://x.com/uihssn" target="_blank" rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>Ahmed Hassan</a>
+        </p>
+      )}
+      {tab === 'pexels' && (
+        <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer"
+          className="block text-right text-[9px] hover:opacity-70 transition-opacity" style={{ color: T.muted }}>Photos by Pexels</a>
+      )}
+      {tab === 'unsplash' && (
+        <a href="https://unsplash.com/?utm_source=herokit&utm_medium=referral" target="_blank" rel="noopener noreferrer"
+          className="block text-right text-[9px] hover:opacity-70 transition-opacity" style={{ color: T.muted }}>Photos by Unsplash</a>
+      )}
 
       {/* Curated grid */}
       {tab === 'curated' && (
         <>
           <div className="grid grid-cols-4 gap-1.5">
             {visible.map(item => (
-              <button key={item.src} onClick={() => onChange({ imageUrl: item.src, videoUrl: undefined })}
+              <button key={item.src} onClick={() => onChange({ imageUrl: item.src, videoUrl: undefined, imageAttribution: undefined })}
                 onMouseEnter={onEnter(item.src)} onMouseLeave={onLeave}
                 className={thumbCls(imageUrl === item.src)}>
                 <img src={item.thumb} alt="" width={64} height={64} className="w-full h-full object-cover" loading="eager" decoding="async" />
@@ -379,7 +391,7 @@ const GallerySection: React.FC<{
             <div className="grid grid-cols-4 gap-1.5">
               {results.map(photo => (
                 <button key={photo.id}
-                  onClick={() => onChange({ imageUrl: photo.src.large2x, videoUrl: undefined })}
+                  onClick={() => onChange({ imageUrl: photo.src.large2x, videoUrl: undefined, imageAttribution: undefined })}
                   onMouseEnter={onEnter(photo.src.medium)} onMouseLeave={onLeave}
                   title={`${photo.alt || 'Photo'} · ${photo.photographer}`}
                   className={thumbCls(imageUrl === photo.src.large2x)}>
@@ -406,6 +418,70 @@ const GallerySection: React.FC<{
           )}
         </>
       )}
+
+      {/* Unsplash search */}
+      {tab === 'unsplash' && (
+        <>
+          <div className="flex flex-wrap gap-1">
+            {QUICK_SEARCHES.map(q => (
+              <button key={q} onClick={() => doUnsplashSearch(q)}
+                className="px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all"
+                style={{
+                  borderColor: uLastQuery.toLowerCase() === q.toLowerCase() ? T.accent : T.border,
+                  color: uLastQuery.toLowerCase() === q.toLowerCase() ? T.accent : T.muted,
+                  background: T.panel,
+                }}>{q}</button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <input type="text" placeholder="Search Unsplash…" value={uQuery}
+              onChange={e => setUQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && doUnsplashSearch(uQuery)}
+              className="flex-1 rounded-lg px-3 py-1.5 text-[11px] outline-none border transition-colors"
+              style={{ background: T.panel, borderColor: T.border, color: T.text }} />
+            <button onClick={() => doUnsplashSearch(uQuery)} disabled={uSearching}
+              className="px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-40"
+              style={{ background: T.text, color: T.bg }}>
+              {uSearching ? '…' : 'Go'}
+            </button>
+          </div>
+          {uResults.length > 0 && (
+            <div className="grid grid-cols-4 gap-1.5">
+              {uResults.map(photo => (
+                <button key={photo.id}
+                  onClick={() => {
+                    onChange({
+                      imageUrl: photo.urls.regular, videoUrl: undefined,
+                      imageAttribution: { source: 'unsplash', name: photo.user.name, profileUrl: photo.user.profileUrl },
+                    });
+                    trackUnsplashDownload(photo.downloadLocation);
+                  }}
+                  onMouseEnter={onEnter(photo.urls.regular)} onMouseLeave={onLeave}
+                  title={`${photo.alt || 'Photo'} · ${photo.user.name}`}
+                  className={thumbCls(imageUrl === photo.urls.regular)}>
+                  <img src={photo.urls.small} alt={photo.alt || ''} width={64} height={64}
+                    className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                </button>
+              ))}
+            </div>
+          )}
+          {uResults.length === 0 && !uSearching && uLastQuery && (
+            <p className="text-[10px] text-center py-4" style={{ color: T.dim }}>No results for "{uLastQuery}"</p>
+          )}
+          {uResults.length === 0 && !uSearching && !uLastQuery && (
+            <p className="text-[10px] text-center py-6 leading-relaxed px-2" style={{ color: T.dim }}>
+              Pick a quick search or type your own.
+            </p>
+          )}
+          {uHasMore && !uSearching && (
+            <button onClick={() => fetchUnsplash(uLastQuery, uPage + 1)}
+              className="w-full py-2 text-[10px] font-medium rounded-lg border"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Load more
+            </button>
+          )}
+        </>
+      )}
       <ThumbHoverPreview hover={hover} />
     </div>
   );
@@ -424,8 +500,8 @@ const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
 
 const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
 
-const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) => {
-  const [tab, setTab]       = useState<'curated'|'pexels'>('curated');
+const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttribution) => void }> = ({ onPick }) => {
+  const [tab, setTab]       = useState<'curated'|'pexels'|'unsplash'>('curated');
   const [query, setQuery]   = useState('');
   const [results, setResults] = useState<{ id: number; src: { small: string; medium: string; large2x: string } }[]>([]);
   const [searching, setSearching] = useState(false);
@@ -433,6 +509,12 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
   const [page, setPage]     = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [lastQuery, setLastQuery] = useState('');
+  const [uQuery, setUQuery]         = useState('');
+  const [uResults, setUResults]     = useState<UnsplashPhoto[]>([]);
+  const [uSearching, setUSearching] = useState(false);
+  const [uPage, setUPage]           = useState(1);
+  const [uHasMore, setUHasMore]     = useState(false);
+  const [uLastQuery, setULastQuery] = useState('');
   const { hover, onEnter, onLeave } = useThumbHover();
 
   const handleFile = (file: File) => {
@@ -455,42 +537,26 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
     } catch {} finally { setSearching(false); }
   };
 
+  const searchUnsplash = async (q: string, pg: number = 1) => {
+    if (!q.trim()) return;
+    setUSearching(true);
+    try {
+      const res = await fetch(`/api/unsplash-search?query=${encodeURIComponent(q)}&page=${pg}`);
+      const data = await res.json();
+      const photos: UnsplashPhoto[] = data.results ?? [];
+      setUResults(pg === 1 ? photos : prev => [...prev, ...photos]);
+      setUHasMore(!!data.hasMore);
+      setULastQuery(q); setUPage(pg);
+    } catch {} finally { setUSearching(false); }
+  };
+
   return (
     <div className="space-y-2">
-      <div
-        className="relative flex rounded-full border"
-        style={{
-          background: T.panel, borderColor: T.border,
-          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)',
-          padding: 3,
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute', top: 3, bottom: 3,
-            left: tab === 'curated' ? 'calc(3px + 0 * ((100% - 6px) / 2))' : 'calc(3px + 1 * ((100% - 6px) / 2))',
-            width: 'calc((100% - 6px) / 2)',
-            background: T.surface, borderRadius: 9999,
-            boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-            transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-            pointerEvents: 'none',
-          }}
-        />
-        {(['curated','pexels'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className="leading-none"
-            style={{
-              position: 'relative', zIndex: 1, flex: 1,
-              padding: '5px 0', fontSize: 10, fontWeight: 600,
-              borderRadius: 9999, background: 'transparent', border: 'none', cursor: 'pointer',
-              color: tab === t ? T.text : T.muted,
-              transition: 'color 0.22s ease',
-            }}>
-            {t === 'curated' ? 'Gallery' : 'Pexels'}
-          </button>
-        ))}
-      </div>
+      <TabBar
+        options={[{ id: 'curated', label: 'Gallery' }, { id: 'pexels', label: 'Pexels' }, { id: 'unsplash', label: 'Unsplash' }]}
+        value={tab} onChange={v => setTab(v as 'curated' | 'pexels' | 'unsplash')}
+        size="sm"
+      />
       {/* Dropzone — same treatment as the Layer 1 / Source upload area */}
       <label
         onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
@@ -566,6 +632,55 @@ const LayerPicker: React.FC<{ onPick: (url: string) => void }> = ({ onPick }) =>
             </button>
           )}
           {searching && results.length > 0 && (
+            <p className="text-[10px] text-center py-1" style={{ color: T.dim }}>Loading…</p>
+          )}
+        </div>
+      )}
+      {tab === 'unsplash' && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1">
+            {PEXELS_QUICK.map(q => (
+              <button key={q} onClick={() => { setUQuery(q); searchUnsplash(q); }}
+                className="px-2 py-0.5 text-[9px] rounded-full border transition-all"
+                style={{ borderColor: T.border, color: T.muted, background: T.panel }}>{q}</button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <input value={uQuery} onChange={e => setUQuery(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && searchUnsplash(uQuery)}
+              placeholder="Search Unsplash…"
+              className="flex-1 rounded-lg px-2 py-1.5 text-[10px] outline-none border"
+              style={{ background: T.panel, borderColor: T.border, color: T.text }} />
+            <button onClick={() => searchUnsplash(uQuery)} disabled={uSearching}
+              className="px-2.5 py-1.5 text-[9px] font-bold rounded-lg disabled:opacity-40"
+              style={{ background: T.text, color: T.bg }}>
+              {uSearching ? '…' : 'Go'}
+            </button>
+          </div>
+          {uResults.length > 0 && (
+            <div className="grid grid-cols-4 gap-1">
+              {uResults.map(p => (
+                <button key={p.id}
+                  onClick={() => {
+                    onPick(p.urls.regular, { source: 'unsplash', name: p.user.name, profileUrl: p.user.profileUrl });
+                    trackUnsplashDownload(p.downloadLocation);
+                  }}
+                  onMouseEnter={onEnter(p.urls.regular)} onMouseLeave={onLeave}
+                  title={`${p.alt || 'Photo'} · ${p.user.name}`}
+                  className="aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-[#b8b4aa] transition-all">
+                  <img src={p.urls.small} alt="" width={48} height={48} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+          {uHasMore && !uSearching && (
+            <button onClick={() => searchUnsplash(uLastQuery, uPage + 1)}
+              className="w-full py-1.5 text-[10px] font-medium rounded-lg border transition-all"
+              style={{ color: T.muted, borderColor: T.border, background: T.panel }}>
+              Load more
+            </button>
+          )}
+          {uSearching && uResults.length > 0 && (
             <p className="text-[10px] text-center py-1" style={{ color: T.dim }}>Loading…</p>
           )}
         </div>
@@ -655,33 +770,51 @@ const LayersSection: React.FC<{
             {!isCollapsed && (
               <div className="p-3 space-y-3" style={{ opacity: isHidden ? 0.5 : 1 }}>
                 {layer.imageUrl ? (
-                  <div className="relative rounded-lg overflow-hidden h-20 group">
-                    <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">
-                        Change
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => {
-                            const f = e.target.files?.[0]; if (!f) return;
-                            const r = new FileReader();
-                            r.onload = async ev => {
-                              const dataUrl = ev.target?.result as string;
-                              const naturalAspect = await loadNaturalAspect(dataUrl);
-                              // Reset position/size — a swapped-in image at the old box's
-                              // aspect would otherwise look squashed until re-positioned.
-                              update(layer.id, { imageUrl: dataUrl, naturalAspect, x: 0, y: 0, width: 1, height: 1 });
-                            };
-                            r.readAsDataURL(f);
-                          }} />
-                      </label>
-                      <button onClick={() => update(layer.id, { imageUrl: undefined })}
-                        className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">Clear</button>
+                  <>
+                    <div className="relative rounded-lg overflow-hidden h-20 group">
+                      <img src={layer.imageUrl} alt="" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <label className="cursor-pointer px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">
+                          Change
+                          <input type="file" accept="image/*" className="hidden"
+                            onChange={e => {
+                              const f = e.target.files?.[0]; if (!f) return;
+                              const r = new FileReader();
+                              r.onload = async ev => {
+                                const dataUrl = ev.target?.result as string;
+                                const naturalAspect = await loadNaturalAspect(dataUrl);
+                                // Reset position/size — a swapped-in image at the old box's
+                                // aspect would otherwise look squashed until re-positioned.
+                                update(layer.id, { imageUrl: dataUrl, naturalAspect, attribution: undefined, x: 0, y: 0, width: 1, height: 1 });
+                              };
+                              r.readAsDataURL(f);
+                            }} />
+                        </label>
+                        <button onClick={() => update(layer.id, { imageUrl: undefined, attribution: undefined })}
+                          className="px-2 py-1 bg-white/20 rounded text-[9px] text-white font-medium">Clear</button>
+                      </div>
                     </div>
-                  </div>
+                    {layer.attribution && (
+                      <p className="text-[9px]" style={{ color: T.dim }}>
+                        Photo by{' '}
+                        <a href={`${layer.attribution.profileUrl}?utm_source=herokit&utm_medium=referral`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>
+                          {layer.attribution.name}
+                        </a>{' '}
+                        on{' '}
+                        <a href="https://unsplash.com/?utm_source=herokit&utm_medium=referral"
+                          target="_blank" rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>
+                          Unsplash
+                        </a>
+                      </p>
+                    )}
+                  </>
                 ) : (
-                  <LayerPicker onPick={async url => {
+                  <LayerPicker onPick={async (url, attribution) => {
                     const naturalAspect = await loadNaturalAspect(url);
-                    update(layer.id, { imageUrl: url, naturalAspect, x: 0, y: 0, width: 1, height: 1 });
+                    update(layer.id, { imageUrl: url, naturalAspect, attribution, x: 0, y: 0, width: 1, height: 1 });
                   }} />
                 )}
                 <div>
@@ -1111,7 +1244,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
     setGenError(null);
     try {
       const imageUrl = await generateBackground(genPrompt.trim());
-      set({ imageUrl, videoUrl: undefined });
+      set({ imageUrl, videoUrl: undefined, imageAttribution: undefined });
     } catch (err) {
       setGenError(err instanceof Error ? err.message : 'Generation failed.');
     } finally {
@@ -1122,10 +1255,10 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const handleFile = (file: File) => {
     if (file.type.startsWith('image/')) {
       const r = new FileReader();
-      r.onload = e => set({ imageUrl: e.target?.result as string, videoUrl: undefined });
+      r.onload = e => set({ imageUrl: e.target?.result as string, videoUrl: undefined, imageAttribution: undefined });
       r.readAsDataURL(file);
     } else if (file.type.startsWith('video/')) {
-      set({ videoUrl: URL.createObjectURL(file), imageUrl: undefined });
+      set({ videoUrl: URL.createObjectURL(file), imageUrl: undefined, imageAttribution: undefined });
     }
   };
 
@@ -1262,22 +1395,40 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           )}
           {sourceMode === 'upload' ? (
             hasSource ? (
-              <div className="relative rounded-xl overflow-hidden h-32 group">
-                {state.videoUrl ? (
-                  <video src={state.videoUrl} muted loop autoPlay playsInline className="w-full h-full object-cover" />
-                ) : (
-                  <img src={state.imageUrl} alt="" className="w-full h-full object-cover" />
-                )}
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <label className="cursor-pointer px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">
-                    Change
-                    <input type="file" accept="image/*,video/*" className="hidden"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-                  </label>
-                  <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined })}
-                    className="px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">Clear</button>
+              <>
+                <div className="relative rounded-xl overflow-hidden h-32 group">
+                  {state.videoUrl ? (
+                    <video src={state.videoUrl} muted loop autoPlay playsInline className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={state.imageUrl} alt="" className="w-full h-full object-cover" />
+                  )}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">
+                      Change
+                      <input type="file" accept="image/*,video/*" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                    </label>
+                    <button onClick={() => set({ imageUrl: undefined, videoUrl: undefined, imageAttribution: undefined })}
+                      className="px-3 py-1.5 bg-white/20 rounded text-[10px] text-white font-medium">Clear</button>
+                  </div>
                 </div>
-              </div>
+                {state.imageAttribution && (
+                  <p className="text-[9px] mt-1.5" style={{ color: T.dim }}>
+                    Photo by{' '}
+                    <a href={`${state.imageAttribution.profileUrl}?utm_source=herokit&utm_medium=referral`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>
+                      {state.imageAttribution.name}
+                    </a>{' '}
+                    on{' '}
+                    <a href="https://unsplash.com/?utm_source=herokit&utm_medium=referral"
+                      target="_blank" rel="noopener noreferrer"
+                      className="underline underline-offset-2 hover:opacity-70" style={{ color: T.muted }}>
+                      Unsplash
+                    </a>
+                  </p>
+                )}
+              </>
             ) : (
               <label
                 onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}

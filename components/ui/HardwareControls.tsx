@@ -119,6 +119,56 @@ export const HardwareRow: React.FC<{ label: string; children: React.ReactNode }>
   </div>
 );
 
+/* Generic sliding-pill tab bar — shared by DocsPanel, LooksPanel, and the
+   Source/Layer gallery pickers, which each used to hand-roll their own copy
+   (some hardcoded for exactly 2 tabs, which breaks outright with a 3rd).
+   `size` matches each panel's original look: 'md' (11px/7px padding) for
+   DocsPanel/LooksPanel, 'sm' (10px/5px padding) for the gallery pickers.
+   Tabs are always equal-width (flex:1) — the sliding indicator's position/
+   width is computed as an equal fraction of the total bar, so content-width
+   tabs of different label lengths (e.g. "Pexels" vs "Unsplash") would leave
+   the indicator visibly misaligned with the actual button it's meant to
+   highlight. Equal width is what keeps the two in sync at any tab count. */
+export const TabBar: React.FC<{
+  options: { id: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+  size?: 'sm' | 'md';
+}> = ({ options, value, onChange, size = 'md' }) => {
+  const count = options.length;
+  const idx   = Math.max(0, options.findIndex(o => o.id === value));
+  const fontSize = size === 'sm' ? 10 : 11;
+  const padding  = `${size === 'sm' ? 5 : 7}px 0`;
+  return (
+    <div className="relative flex rounded-full border" style={{
+      background: T.panel, borderColor: T.border,
+      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)', padding: 3,
+    }}>
+      <div aria-hidden style={{
+        position: 'absolute', top: 3, bottom: 3,
+        left: `calc(3px + ${idx} * ((100% - 6px) / ${count}))`,
+        width: `calc((100% - 6px) / ${count})`,
+        background: T.surface, borderRadius: 9999,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+        transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+        pointerEvents: 'none',
+      }} />
+      {options.map(o => (
+        <button key={o.id} onClick={() => onChange(o.id)} className="leading-none"
+          style={{
+            position: 'relative', zIndex: 1, flex: 1,
+            padding, fontSize, fontWeight: 600, borderRadius: 9999,
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: value === o.id ? T.text : T.muted,
+            transition: 'color 0.22s ease',
+          }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
 /* ─────────────────────────────────────────────────────────────────────────────
    KNOB SLIDER — SVG arc track + CSS .knob body
 

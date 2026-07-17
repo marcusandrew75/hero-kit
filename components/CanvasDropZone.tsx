@@ -15,6 +15,7 @@ const DEMO: Partial<BackgroundState> = {
   bgColor: '#050508',
   imageUrl: '/super-visuals-ahmed-hassan/AI_Bg_029.jpg',
   videoUrl: undefined,
+  imageAttribution: undefined,
   imageFilter: 'none', imageBlur: 0, imageMask: 'radial',
   imageOpacity: 1, tintColor: '#6366f1',
   chromaticAberration: 0, ditherStyle: 'none', ditherScale: 1,
@@ -44,10 +45,10 @@ const CanvasDropZone: React.FC<Props> = ({ onChange, minimal = false }) => {
   const handleFile = (file: File) => {
     if (file.type.startsWith('image/')) {
       const r = new FileReader();
-      r.onload = e => onChange({ imageUrl: e.target?.result as string, videoUrl: undefined });
+      r.onload = e => onChange({ imageUrl: e.target?.result as string, videoUrl: undefined, imageAttribution: undefined });
       r.readAsDataURL(file);
     } else if (file.type.startsWith('video/')) {
-      onChange({ videoUrl: URL.createObjectURL(file), imageUrl: undefined });
+      onChange({ videoUrl: URL.createObjectURL(file), imageUrl: undefined, imageAttribution: undefined });
     }
   };
 

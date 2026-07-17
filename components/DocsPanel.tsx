@@ -1,46 +1,7 @@
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { T } from './ui/HardwareControls';
-
-// ─── Local primitives — matching LooksPanel's sliding-pill tab pattern ──────
-
-const TabBar: React.FC<{
-  options: { id: string; label: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}> = ({ options, value, onChange }) => {
-  const count = options.length;
-  const idx   = Math.max(0, options.findIndex(o => o.id === value));
-  return (
-    <div className="relative flex rounded-full border" style={{
-      background: T.panel, borderColor: T.border,
-      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.08)', padding: 3,
-    }}>
-      <div aria-hidden style={{
-        position: 'absolute', top: 3, bottom: 3,
-        left: `calc(3px + ${idx} * ((100% - 6px) / ${count}))`,
-        width: `calc((100% - 6px) / ${count})`,
-        background: T.surface, borderRadius: 9999,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-        transition: 'left 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-        pointerEvents: 'none',
-      }} />
-      {options.map(o => (
-        <button key={o.id} onClick={() => onChange(o.id)} className="leading-none"
-          style={{
-            position: 'relative', zIndex: 1, flex: 1, padding: '7px 0',
-            fontSize: 11, fontWeight: 600, borderRadius: 9999,
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: value === o.id ? T.text : T.muted,
-            transition: 'color 0.22s ease',
-          }}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-};
+import { T, TabBar } from './ui/HardwareControls';
 
 // ─── Documentation content ────────────────────────────────────────────────────
 // Written with the actual history behind each technique — most of these
@@ -169,6 +130,12 @@ const DOCS: DocSection[] = [
 interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
+  {
+    version: '3.6', date: '16 Jul 2026',
+    items: [
+      'Added: Unsplash as a third image source, alongside Curated and Pexels — searchable from both the Source panel and the Layer 2/3 picker, with a persistent photographer credit shown under the thumbnail for as long as that photo is in use',
+    ],
+  },
   {
     version: '3.5', date: '16 Jul 2026',
     items: [

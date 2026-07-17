@@ -10,6 +10,18 @@ Source pages:
 - https://help.unsplash.com/en/articles/2511245-unsplash-api-guidelines
 - https://unsplash.com/documentation
 
+## Implementation status
+
+Built. `api/unsplash-search.ts` and `api/unsplash-download.ts` are the two
+serverless proxies; the UI lives in `components/RightPanel.tsx` (`GallerySection`
+and `LayerPicker`, both gained an "Unsplash" tab alongside Curated/Pexels).
+Attribution is tracked via `ImageAttribution` in `types.ts`
+(`BackgroundState.imageAttribution` / `ImageLayer.attribution`) and rendered
+as a persistent caption under the Source thumbnail / layer card. Still
+running on Unsplash's demo-mode rate limit (50 req/hour, shared across every
+visitor) until production access is requested and approved — see "Applying
+for the increase" below.
+
 ## Key must stay server-side (unlike Pexels today)
 
 Pexels' key (`VITE_PEXELS_API_KEY`) is exposed to the client on purpose — the

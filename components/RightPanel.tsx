@@ -2181,6 +2181,33 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </p>
           </EffectSection>
 
+          {/* Kaleidoscope */}
+          <EffectSection label="Kaleidoscope" number={19} enabled={state.kaleidoscopeEnabled}
+            onToggle={v => set({ kaleidoscopeEnabled: v })}>
+            <Row label="Mode">
+              <HwSegment options={[{ id: 'radial', label: 'Radial' }, { id: 'mirror', label: 'Mirror' }]}
+                value={state.kaleidoscopeMode}
+                onChange={v => set({ kaleidoscopeMode: v as 'radial' | 'mirror' })} />
+            </Row>
+            {state.kaleidoscopeMode === 'radial' && (
+              <Row label="Segments">
+                <HwSlider value={state.kaleidoscopeSegments} min={2} max={16}
+                  onChange={v => set({ kaleidoscopeSegments: v })} />
+              </Row>
+            )}
+            <Row label="Rotation">
+              <HwSlider value={state.kaleidoscopeAngle} min={0} max={360} unit="°"
+                onChange={v => set({ kaleidoscopeAngle: v })} />
+            </Row>
+            <Row label="Zoom">
+              <HwSlider value={state.kaleidoscopeZoom} min={0.5} max={2} step={0.1} decimals={1} unit="×"
+                onChange={v => set({ kaleidoscopeZoom: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Folds the image into mirrored wedges around the centre — a mandala/emblem from any photo. Rotation spins the source slice; Zoom controls how much is pulled in.
+            </p>
+          </EffectSection>
+
         </HardwarePanel>
 
         {/* ── Light & FX ─────────────────────────────────────────────────── */}

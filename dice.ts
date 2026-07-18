@@ -130,6 +130,16 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'kaleidoscope',
+    make: () => ({
+      kaleidoscopeEnabled: true,
+      kaleidoscopeMode: pick(['radial', 'mirror'] as const),
+      kaleidoscopeSegments: pick([3, 4, 6, 8, 12]),
+      kaleidoscopeAngle: randInt(0, 360),
+      kaleidoscopeZoom: rand(0.8, 1.4),
+    }),
+  },
+  {
     id: 'cmyk',
     make: () => ({ cmykSeparationEnabled: true, cmykDotSize: rand(3, 6), cmykSpacing: rand(6, 14) }),
   },

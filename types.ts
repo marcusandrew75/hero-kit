@@ -202,6 +202,14 @@ export interface BackgroundState {
   contourBgColor: string;   // lightest band / paper ground
   contourFill: number;      // 0–100, 0 = lines over the photo, 100 = flat tinted map
 
+  // Kaleidoscope — polar coordinate remap folding the image into mirrored
+  // wedges (radial) or a 4-way mirror (mirror) around the centre.
+  kaleidoscopeEnabled: boolean;
+  kaleidoscopeMode: 'radial' | 'mirror';
+  kaleidoscopeSegments: number; // 2–16 mirror wedges (radial mode)
+  kaleidoscopeAngle: number;    // 0–360°, spins which slice of the source fills each wedge
+  kaleidoscopeZoom: number;     // 0.5–2, how much of the source is pulled into each wedge
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

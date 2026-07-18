@@ -2169,6 +2169,68 @@ const applyDisplacementWarp = (
   return out;
 };
 
+// ─── Kaleidoscope ─────────────────────────────────────────────────────────────
+// Coordinate remap around the image centre. Radial mode folds the image into N
+// mirrored wedges (classic kaleidoscope emblem / mandala); mirror mode folds
+// into a single quadrant for 4-way symmetry. Angle spins which slice of the
+// source fills each wedge; zoom controls how much of the source is pulled in.
+// Reads the incoming buffer as an immutable source and writes a fresh out, so
+// no separate snapshot is needed.
+
+const applyKaleidoscope = (
+  data: Uint8ClampedArray, w: number, h: number,
+  mode: 'radial' | 'mirror', segments: number, angle: number, zoom: number,
+): Uint8ClampedArray => {
+  const out = new Uint8ClampedArray(data.length);
+  const cx = w / 2, cy = h / 2;
+  const rot = angle * Math.PI / 180;
+  const seg = Math.max(2, Math.round(segments));
+  const wedge = (Math.PI * 2) / seg;
+  const z = Math.max(0.1, zoom);
+
+  // Mirror-reflect a coordinate back into [0, max-1] rather than clamping, so
+  // the sampled source tiles seamlessly instead of smearing at the edges.
+  const reflect = (v: number, max: number): number => {
+    const m = max - 1;
+    if (m <= 0) return 0;
+    let p = v % (2 * m);
+    if (p < 0) p += 2 * m;
+    return p > m ? 2 * m - p : p;
+  };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = x - cx, dy = y - cy;
+      let sx: number, sy: number;
+
+      if (mode === 'radial') {
+        const r = Math.sqrt(dx * dx + dy * dy);
+        let a = Math.atan2(dy, dx) + rot;
+        a = ((a % wedge) + wedge) % wedge; // fold angle into one wedge
+        if (a > wedge / 2) a = wedge - a;  // mirror alternate wedges
+        sx = cx + Math.cos(a) * r / z;
+        sy = cy + Math.sin(a) * r / z;
+      } else {
+        // rotate, then fold to one quadrant → 4-way mirror symmetry
+        const ca = Math.cos(rot), sa = Math.sin(rot);
+        const rx = dx * ca - dy * sa;
+        const ry = dx * sa + dy * ca;
+        sx = cx + Math.abs(rx) / z;
+        sy = cy + Math.abs(ry) / z;
+      }
+
+      const fx = reflect(sx, w);
+      const fy = reflect(sy, h);
+      const di = (y * w + x) * 4;
+      out[di]     = bilinearSample(data, w, h, fx, fy, 0);
+      out[di + 1] = bilinearSample(data, w, h, fx, fy, 1);
+      out[di + 2] = bilinearSample(data, w, h, fx, fy, 2);
+      out[di + 3] = bilinearSample(data, w, h, fx, fy, 3);
+    }
+  }
+  return out;
+};
+
 // ─── Motion blur helper ───────────────────────────────────────────────────────
 
 const applyMotionBlur = (
@@ -2281,6 +2343,7 @@ interface ProcessedImageProps {
   gradientMapEnabled: boolean; gradientMapPreset: string; gradientMapStrength: number; gradientMapInvert: boolean;
   reliefEnabled: boolean; reliefAngle: number; reliefDepth: number; reliefColorize: number; reliefTint: string;
   contourEnabled: boolean; contourLevels: number; contourLineColor: string; contourBgColor: string; contourFill: number;
+  kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
@@ -2363,6 +2426,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+    kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
@@ -2501,6 +2565,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (imageGlitchEnabled)  processed = applyImageGlitch(processed, w, h, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit, imageGlitchStyle);
           if (dispersionEnabled)   processed = applyDispersion(processed, w, h, dispersionThreshold, dispersionStrength, dispersionDirection, dispersionSpread);
           if (warpEnabled)         processed = applyDisplacementWarp(processed, w, h, warpStrength, warpScale, warpOctaves, warpStyle);
+          if (kaleidoscopeEnabled) processed = applyKaleidoscope(processed, w, h, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom);
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (reliefEnabled)       processed = applyRelief(processed, w, h, reliefAngle, reliefDepth, reliefColorize, reliefTint);
@@ -2568,6 +2633,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
       reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
       contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+      kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
@@ -2765,6 +2831,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+    kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2792,6 +2859,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
     (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
+    (kaleidoscopeEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -2891,6 +2959,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 gradientMapEnabled={gradientMapEnabled ?? false} gradientMapPreset={gradientMapPreset ?? 'thermal'} gradientMapStrength={gradientMapStrength ?? 100} gradientMapInvert={gradientMapInvert ?? false}
                 reliefEnabled={reliefEnabled ?? false} reliefAngle={reliefAngle ?? 135} reliefDepth={reliefDepth ?? 55} reliefColorize={reliefColorize ?? 25} reliefTint={reliefTint ?? '#8a8a8a'}
                 contourEnabled={contourEnabled ?? false} contourLevels={contourLevels ?? 8} contourLineColor={contourLineColor ?? '#1a2b1a'} contourBgColor={contourBgColor ?? '#efe9d8'} contourFill={contourFill ?? 40}
+                kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}

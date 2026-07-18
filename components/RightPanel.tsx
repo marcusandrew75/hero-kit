@@ -228,7 +228,8 @@ const GALLERY = [
 
 const GALLERY_INITIAL = 8;
 const PEXELS_KEY      = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
-const QUICK_SEARCHES  = ['Landscape', 'Atmospheric', 'Cinematic', 'Cosmic', 'Abstract', 'Moody'];
+const PEXELS_QUICK   = ['Wallpaper', 'Background', 'Texture', 'Landscape', 'Atmospheric'];
+const UNSPLASH_QUICK = ['Illustrations', 'Experimental', 'Wallpapers', '3D Renders', 'People', 'Patterns'];
 
 interface PexelsPhoto {
   id: number; alt: string; photographer: string;
@@ -386,7 +387,7 @@ const GallerySection: React.FC<{
       {tab === 'pexels' && (
         <>
           <div className="flex flex-wrap gap-1">
-            {QUICK_SEARCHES.map(q => (
+            {PEXELS_QUICK.map(q => (
               <button key={q} onClick={() => doSearch(q)}
                 className="px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all"
                 style={{
@@ -445,7 +446,7 @@ const GallerySection: React.FC<{
       {tab === 'unsplash' && (
         <>
           <div className="flex flex-wrap gap-1">
-            {QUICK_SEARCHES.map(q => (
+            {UNSPLASH_QUICK.map(q => (
               <button key={q} onClick={() => doUnsplashSearch(q)}
                 className="px-2.5 py-1 text-[10px] font-medium rounded-full border transition-all"
                 style={{
@@ -520,8 +521,6 @@ const BLEND_MODES: { id: LayerBlendMode; label: string }[] = [
   { id: 'difference', label: 'Differ.' },
   { id: 'luminosity', label: 'Lumin.'  },
 ];
-
-const PEXELS_QUICK = ['Atmospheric', 'Cosmic', 'Abstract', 'Texture', 'Moody'];
 
 const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttribution) => void; mobile?: boolean }> = ({ onPick, mobile }) => {
   const [tab, setTab]       = useState<'curated'|'pexels'|'unsplash'>('curated');
@@ -663,7 +662,7 @@ const LayerPicker: React.FC<{ onPick: (url: string, attribution?: ImageAttributi
       {tab === 'unsplash' && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap gap-1">
-            {PEXELS_QUICK.map(q => (
+            {UNSPLASH_QUICK.map(q => (
               <button key={q} onClick={() => { setUQuery(q); searchUnsplash(q); }}
                 className="px-2 py-0.5 text-[9px] rounded-full border transition-all"
                 style={{ borderColor: T.border, color: T.muted, background: T.panel }}>{q}</button>

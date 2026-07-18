@@ -3,8 +3,9 @@ import { DEFAULT } from './defaultState';
 
 // The Dice — rolls a random-but-tasteful effect stack. Confirmed against the
 // actual per-pixel pipeline (components/Canvas.tsx, "Step 2: per-pixel
-// transforms"): grade/splitTone/edgeGlow/imageGlitch/dispersion/warp/
-// channelSmear/pixelSort/riso/silkscreen/cmyk/halftone/postcard/dither all
+// transforms"): grade/splitTone/gradientMap/edgeGlow/imageGlitch/dispersion/
+// warp/kaleidoscope/channelSmear/pixelSort/relief/contour/riso/silkscreen/
+// cmyk/halftone/postcard/dither all
 // run as SEQUENTIAL DESTRUCTIVE passes over the same buffer, in that fixed
 // order — stacking two heavy "remap" effects just means the second overwrites/
 // muddies the first's output. So every roll picks exactly one "hero" from

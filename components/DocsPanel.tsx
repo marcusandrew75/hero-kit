@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '3.9', date: '18 Jul 2026',
+    items: [
+      'Added: four new effects that go beyond recolouring the image — Gradient Map (thermal / infrared / x-ray / acid false-colour ramps), Relief (lights the image like a carved, embossed metal or stone surface), Contour (turns a photo into a topographic map of elevation lines), and Kaleidoscope (folds any image into a mirrored mandala). All four join the Dice pool',
+    ],
+  },
+  {
     version: '3.8', date: '16 Jul 2026',
     items: [
       'Added: HeroKit now works on mobile — the sidebar becomes a drag-to-expand bottom sheet, the Grain & Texture knobs (previously mouse-only and completely unusable on touch) now support touch dragging, and hover-only controls like the Change/Clear buttons on thumbnails are now always visible on a phone instead of requiring a hover that doesn\'t exist on touch',

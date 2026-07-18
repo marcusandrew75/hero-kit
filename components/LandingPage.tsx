@@ -237,7 +237,7 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
         <div className="landing-reveal">
           <SectionTag number="03" label="The full rack" />
           <h2 className="text-[30px] md:text-[42px] font-bold leading-tight mt-5 mb-4 max-w-2xl" style={GROTESK}>
-            Two dozen modules.<br />One pipeline.
+            Thirty modules.<br />One pipeline.
           </h2>
           <p className="text-[15px] md:text-[16px] leading-relaxed mb-10 max-w-2xl" style={{ color: T.muted }}>
             Run as many at once as your idea needs — each effect is computed in sequence, so

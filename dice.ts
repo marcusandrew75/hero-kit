@@ -44,6 +44,7 @@ const DUOTONE_PAIRS: [string, string][] = [
 ];
 
 const EDGE_GLOW_COLORS = ['#00ffff', '#ff00aa', '#ffd23f', '#39ff14', '#ff6b35'];
+const RELIEF_TINTS = ['#8a8a8a', '#b08d57', '#9c9284', '#6b7280', '#b87333']; // steel/bronze/stone/slate/copper
 const SPLIT_SHADOW_COLORS = ['#1a237e', '#0a1f14', '#2d1b00'];
 const SPLIT_HIGHLIGHT_COLORS = ['#ff6d00', '#ffd23f', '#ee4266'];
 const AMBIENT_COLORS = ['#6366f1', '#ff6b35', '#06d6a0', '#ffd23f', '#ee4266'];
@@ -105,6 +106,16 @@ const HEROES: Hero[] = [
       gradientMapPreset: pick(['thermal', 'infrared', 'acid', 'x-ray', 'sunset', 'toxic', 'gold', 'mono'] as const),
       gradientMapStrength: randInt(75, 100),
       gradientMapInvert: chance(0.15),
+    }),
+  },
+  {
+    id: 'relief',
+    make: () => ({
+      reliefEnabled: true,
+      reliefAngle: randInt(0, 360),
+      reliefDepth: randInt(40, 70),
+      reliefColorize: randInt(0, 35),
+      reliefTint: pick(RELIEF_TINTS),
     }),
   },
   {

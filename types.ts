@@ -186,6 +186,14 @@ export interface BackgroundState {
   gradientMapStrength: number; // 0–100, blend over the original
   gradientMapInvert: boolean;  // flip which end of the ramp maps to dark vs light
 
+  // Relief / Emboss-3D — luminance as a lit height-field: the brightness
+  // gradient is shaded by a directional light for a carved / hammered-metal look.
+  reliefEnabled: boolean;
+  reliefAngle: number;    // 0–360°, light direction
+  reliefDepth: number;    // 0–100, bevel / gradient strength
+  reliefColorize: number; // 0–100, 0 = pure lit material, 100 = original colours re-lit
+  reliefTint: string;     // base material colour (steel/bronze/stone…)
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

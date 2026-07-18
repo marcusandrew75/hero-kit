@@ -43,7 +43,7 @@ const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, sm
 
 const EFFECTS_RACK: string[] = [
   'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation', 'Silkscreen', 'Postcard',
-  'Gradient Map',
+  'Gradient Map', 'Relief',
   'Bayer Dither', 'Floyd–Steinberg', 'Atkinson', 'ASCII Dither',
   'Duotone Dither', 'Color Grade', 'Split Tone', 'Edge Glow',
   'Image Glitch', 'Dispersion', 'Displacement Warp', 'Channel Smear',

@@ -1792,6 +1792,59 @@ const applyGradientMap = (
   return out;
 };
 
+// ─── Relief / Emboss-3D ──────────────────────────────────────────────────────
+// Treats image luminance as a height-field and lights it from a chosen angle:
+// the per-pixel brightness gradient (Sobel) is dotted with a light vector to
+// shade the surface, giving a carved / embossed / hammered-metal look with real
+// directional lighting. Colorize blends from pure lit material (steel, bronze,
+// stone) toward the original colours re-lit by the same shading.
+
+const applyRelief = (
+  data: Uint8ClampedArray, w: number, h: number,
+  angle: number, depth: number, colorize: number, tint: string,
+): Uint8ClampedArray => {
+  const s = tint.replace('#', '');
+  const tr = parseInt(s.slice(0,2),16)||0, tg = parseInt(s.slice(2,4),16)||0, tb = parseInt(s.slice(4,6),16)||0;
+
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
+  }
+
+  const rad = angle * Math.PI / 180;
+  const lx = Math.cos(rad), ly = Math.sin(rad);
+  const depthScale = (depth / 100) * 4; // amplify the naturally shallow gradients
+  const col = colorize / 100;
+
+  const GX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+  const GY = [ 1, 2, 1,  0, 0, 0, -1,-2,-1];
+  const out = new Uint8ClampedArray(data);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const si = (y * w + x) * 4;
+      let gx = 0, gy = 0, k = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = Math.min(h - 1, Math.max(0, y + dy));
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = Math.min(w - 1, Math.max(0, x + dx));
+          const v = lum[yy * w + xx];
+          gx += GX[k] * v; gy += GY[k] * v; k++;
+        }
+      }
+      // Shade: flat surfaces sit at 1.0 (neutral); slopes facing the light
+      // brighten, those facing away darken.
+      const shade = Math.max(0, Math.min(2, 1 + (gx * lx + gy * ly) * depthScale)) ;
+      const baseR = tr * shade, baseG = tg * shade, baseB = tb * shade;
+      const cr = data[si] * shade, cg = data[si+1] * shade, cb = data[si+2] * shade;
+      out[si]   = clamp(baseR + (cr - baseR) * col);
+      out[si+1] = clamp(baseG + (cg - baseG) * col);
+      out[si+2] = clamp(baseB + (cb - baseB) * col);
+    }
+  }
+  return out;
+};
+
 // ─── Riso Print ─────────────────────────────────────────────────────────────
 // Simulates Risograph duplicator printing: two flat spot-color ink layers,
 // each independently halftone-dithered from the source luminance, offset from
@@ -2173,6 +2226,7 @@ interface ProcessedImageProps {
   edgeGlowEnabled: boolean; edgeGlowColor: string; edgeGlowIntensity: number; edgeGlowBloom: number; edgeGlowDarken: number;
   splitToneEnabled: boolean; splitToneShadowColor: string; splitToneHighlightColor: string; splitToneStrength: number; splitToneBalance: number;
   gradientMapEnabled: boolean; gradientMapPreset: string; gradientMapStrength: number; gradientMapInvert: boolean;
+  reliefEnabled: boolean; reliefAngle: number; reliefDepth: number; reliefColorize: number; reliefTint: string;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
@@ -2253,6 +2307,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
+    reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
@@ -2393,6 +2448,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (warpEnabled)         processed = applyDisplacementWarp(processed, w, h, warpStrength, warpScale, warpOctaves, warpStyle);
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
+          if (reliefEnabled)       processed = applyRelief(processed, w, h, reliefAngle, reliefDepth, reliefColorize, reliefTint);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
@@ -2454,6 +2510,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
       splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
       gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
+      reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
@@ -2649,6 +2706,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
+    reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2675,7 +2733,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
   const useProcessedCanvas = !!imageUrl && (
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
-    (gradientMapEnabled ?? false) ||
+    (gradientMapEnabled ?? false) || (reliefEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -2773,6 +2831,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 edgeGlowEnabled={edgeGlowEnabled ?? false} edgeGlowColor={edgeGlowColor ?? '#00ffff'} edgeGlowIntensity={edgeGlowIntensity ?? 60} edgeGlowBloom={edgeGlowBloom ?? 8} edgeGlowDarken={edgeGlowDarken ?? 0.5}
                 splitToneEnabled={splitToneEnabled ?? false} splitToneShadowColor={splitToneShadowColor ?? '#1a237e'} splitToneHighlightColor={splitToneHighlightColor ?? '#ff6d00'} splitToneStrength={splitToneStrength ?? 60} splitToneBalance={splitToneBalance ?? 0}
                 gradientMapEnabled={gradientMapEnabled ?? false} gradientMapPreset={gradientMapPreset ?? 'thermal'} gradientMapStrength={gradientMapStrength ?? 100} gradientMapInvert={gradientMapInvert ?? false}
+                reliefEnabled={reliefEnabled ?? false} reliefAngle={reliefAngle ?? 135} reliefDepth={reliefDepth ?? 55} reliefColorize={reliefColorize ?? 25} reliefTint={reliefTint ?? '#8a8a8a'}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}

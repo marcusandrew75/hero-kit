@@ -2133,6 +2133,30 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </p>
           </EffectSection>
 
+          {/* Relief / Emboss-3D */}
+          <EffectSection label="Relief" number={17} enabled={state.reliefEnabled}
+            onToggle={v => set({ reliefEnabled: v })}>
+            <Row label="Light angle">
+              <HwSlider value={state.reliefAngle} min={0} max={360} unit="°"
+                onChange={v => set({ reliefAngle: v })} />
+            </Row>
+            <Row label="Depth">
+              <HwSlider value={state.reliefDepth} min={0} max={100}
+                onChange={v => set({ reliefDepth: v })} />
+            </Row>
+            <Row label="Colorize">
+              {/* 0 = pure lit material (metal/stone), 100 = original colours re-lit */}
+              <HwSlider value={state.reliefColorize} min={0} max={100}
+                onChange={v => set({ reliefColorize: v })} />
+            </Row>
+            <Row label="Material">
+              <ColorSwatch value={state.reliefTint} onChange={v => set({ reliefTint: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Lights the image like a carved surface — brightness becomes height, lit from the chosen angle. Colorize sweeps from hammered metal/stone toward the original colours re-lit.
+            </p>
+          </EffectSection>
+
         </HardwarePanel>
 
         {/* ── Light & FX ─────────────────────────────────────────────────── */}

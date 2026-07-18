@@ -1845,6 +1845,59 @@ const applyRelief = (
   return out;
 };
 
+// ─── Contour / Topographic ───────────────────────────────────────────────────
+// Quantises luminance into elevation bands and strokes the boundary between
+// them, turning a photo into a topographic map. Fill sweeps from lines drawn
+// over the original image (0) to clean flat tinted elevation bands (100). The
+// line is drawn on the higher-elevation side of each boundary so contours stay
+// single crisp lines rather than doubling.
+
+const applyContour = (
+  data: Uint8ClampedArray, w: number, h: number,
+  levels: number, lineColor: string, bgColor: string, fill: number,
+): Uint8ClampedArray => {
+  const parse = (hex: string): [number, number, number] => {
+    const s = hex.replace('#', '');
+    return [parseInt(s.slice(0,2),16)||0, parseInt(s.slice(2,4),16)||0, parseInt(s.slice(4,6),16)||0];
+  };
+  const [lr, lg, lb] = parse(lineColor);
+  const [gr, gg, gb] = parse(bgColor);
+  const L = Math.max(2, Math.round(levels));
+  const f = fill / 100;
+
+  const band = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const lum = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
+    band[i] = Math.min(L - 1, Math.floor(lum * L));
+  }
+
+  const out = new Uint8ClampedArray(data);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const si = i * 4;
+      const b = band[i];
+      const left  = x > 0     ? band[i - 1] : b;
+      const right = x < w - 1 ? band[i + 1] : b;
+      const up    = y > 0     ? band[i - w] : b;
+      const down  = y < h - 1 ? band[i + w] : b;
+      const isLine = left < b || right < b || up < b || down < b;
+      if (isLine) {
+        out[si] = lr; out[si+1] = lg; out[si+2] = lb;
+      } else {
+        const t = L > 1 ? b / (L - 1) : 0; // band tint ramps ground → line colour
+        const tr = gr + (lr - gr) * t;
+        const tg = gg + (lg - gg) * t;
+        const tb = gb + (lb - gb) * t;
+        out[si]   = clamp(data[si]   + (tr - data[si])   * f);
+        out[si+1] = clamp(data[si+1] + (tg - data[si+1]) * f);
+        out[si+2] = clamp(data[si+2] + (tb - data[si+2]) * f);
+      }
+    }
+  }
+  return out;
+};
+
 // ─── Riso Print ─────────────────────────────────────────────────────────────
 // Simulates Risograph duplicator printing: two flat spot-color ink layers,
 // each independently halftone-dithered from the source luminance, offset from
@@ -2227,6 +2280,7 @@ interface ProcessedImageProps {
   splitToneEnabled: boolean; splitToneShadowColor: string; splitToneHighlightColor: string; splitToneStrength: number; splitToneBalance: number;
   gradientMapEnabled: boolean; gradientMapPreset: string; gradientMapStrength: number; gradientMapInvert: boolean;
   reliefEnabled: boolean; reliefAngle: number; reliefDepth: number; reliefColorize: number; reliefTint: string;
+  contourEnabled: boolean; contourLevels: number; contourLineColor: string; contourBgColor: string; contourFill: number;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
@@ -2308,6 +2362,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
+    contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
@@ -2449,6 +2504,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (channelSmearEnabled) processed = applyChannelSmear(processed, w, h, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir);
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (reliefEnabled)       processed = applyRelief(processed, w, h, reliefAngle, reliefDepth, reliefColorize, reliefTint);
+          if (contourEnabled)      processed = applyContour(processed, w, h, contourLevels, contourLineColor, contourBgColor, contourFill);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
@@ -2511,6 +2567,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
       gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
       reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
+      contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
@@ -2707,6 +2764,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
+    contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2733,7 +2791,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
   const useProcessedCanvas = !!imageUrl && (
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
-    (gradientMapEnabled ?? false) || (reliefEnabled ?? false) ||
+    (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -2832,6 +2890,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 splitToneEnabled={splitToneEnabled ?? false} splitToneShadowColor={splitToneShadowColor ?? '#1a237e'} splitToneHighlightColor={splitToneHighlightColor ?? '#ff6d00'} splitToneStrength={splitToneStrength ?? 60} splitToneBalance={splitToneBalance ?? 0}
                 gradientMapEnabled={gradientMapEnabled ?? false} gradientMapPreset={gradientMapPreset ?? 'thermal'} gradientMapStrength={gradientMapStrength ?? 100} gradientMapInvert={gradientMapInvert ?? false}
                 reliefEnabled={reliefEnabled ?? false} reliefAngle={reliefAngle ?? 135} reliefDepth={reliefDepth ?? 55} reliefColorize={reliefColorize ?? 25} reliefTint={reliefTint ?? '#8a8a8a'}
+                contourEnabled={contourEnabled ?? false} contourLevels={contourLevels ?? 8} contourLineColor={contourLineColor ?? '#1a2b1a'} contourBgColor={contourBgColor ?? '#efe9d8'} contourFill={contourFill ?? 40}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}

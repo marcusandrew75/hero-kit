@@ -119,6 +119,17 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'contour',
+    make: () => ({
+      contourEnabled: true,
+      contourLevels: randInt(6, 12),
+      contourLineColor: DEFAULT.contourLineColor,
+      contourBgColor: DEFAULT.contourBgColor,
+      // Either "lines over the photo" or "clean tinted map" — two distinct looks
+      contourFill: chance(0.5) ? randInt(15, 35) : randInt(70, 95),
+    }),
+  },
+  {
     id: 'cmyk',
     make: () => ({ cmykSeparationEnabled: true, cmykDotSize: rand(3, 6), cmykSpacing: rand(6, 14) }),
   },

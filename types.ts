@@ -194,6 +194,14 @@ export interface BackgroundState {
   reliefColorize: number; // 0–100, 0 = pure lit material, 100 = original colours re-lit
   reliefTint: string;     // base material colour (steel/bronze/stone…)
 
+  // Contour / Topographic — quantise luminance into elevation bands and stroke
+  // the boundaries, turning a photo into a topographic map.
+  contourEnabled: boolean;
+  contourLevels: number;    // 3–16 elevation bands
+  contourLineColor: string; // contour-line ink
+  contourBgColor: string;   // lightest band / paper ground
+  contourFill: number;      // 0–100, 0 = lines over the photo, 100 = flat tinted map
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

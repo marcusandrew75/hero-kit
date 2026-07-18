@@ -2157,6 +2157,30 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </p>
           </EffectSection>
 
+          {/* Contour / Topographic */}
+          <EffectSection label="Contour" number={18} enabled={state.contourEnabled}
+            onToggle={v => set({ contourEnabled: v })}>
+            <Row label="Levels">
+              {/* Number of elevation bands — more = tighter contour spacing */}
+              <HwSlider value={state.contourLevels} min={3} max={16}
+                onChange={v => set({ contourLevels: v })} />
+            </Row>
+            <Row label="Line">
+              <ColorSwatch value={state.contourLineColor} onChange={v => set({ contourLineColor: v })} />
+            </Row>
+            <Row label="Ground">
+              <ColorSwatch value={state.contourBgColor} onChange={v => set({ contourBgColor: v })} />
+            </Row>
+            <Row label="Fill">
+              {/* 0 = contour lines over the photo, 100 = flat tinted elevation map */}
+              <HwSlider value={state.contourFill} min={0} max={100}
+                onChange={v => set({ contourFill: v })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Slices brightness into elevation bands and draws the contour lines between them. Fill sweeps from lines over the photo to a clean tinted topographic map.
+            </p>
+          </EffectSection>
+
         </HardwarePanel>
 
         {/* ── Light & FX ─────────────────────────────────────────────────── */}

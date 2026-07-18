@@ -179,6 +179,13 @@ export interface BackgroundState {
   postcardLevels: number;     // 2–8 per-channel quantization levels
   postcardScale: number;      // 1–8 dither cell size: 1 = linen weave, 8 = chunky game dither
 
+  // Gradient Map — remap luminance through a colour LUT (thermal / infrared /
+  // x-ray / acid etc). Recolours the whole image from a single brightness axis.
+  gradientMapEnabled: boolean;
+  gradientMapPreset: 'thermal' | 'infrared' | 'acid' | 'x-ray' | 'sunset' | 'toxic' | 'gold' | 'mono';
+  gradientMapStrength: number; // 0–100, blend over the original
+  gradientMapInvert: boolean;  // flip which end of the ramp maps to dark vs light
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

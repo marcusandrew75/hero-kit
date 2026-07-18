@@ -99,6 +99,15 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'gradientMap',
+    make: () => ({
+      gradientMapEnabled: true,
+      gradientMapPreset: pick(['thermal', 'infrared', 'acid', 'x-ray', 'sunset', 'toxic', 'gold', 'mono'] as const),
+      gradientMapStrength: randInt(75, 100),
+      gradientMapInvert: chance(0.15),
+    }),
+  },
+  {
     id: 'cmyk',
     make: () => ({ cmykSeparationEnabled: true, cmykDotSize: rand(3, 6), cmykSpacing: rand(6, 14) }),
   },

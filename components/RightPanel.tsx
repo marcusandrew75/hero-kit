@@ -231,6 +231,19 @@ const PEXELS_KEY      = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
 const PEXELS_QUICK   = ['Wallpaper', 'Background', 'Texture', 'Landscape', 'Atmospheric'];
 const UNSPLASH_QUICK = ['Experimental', 'Wallpapers', '3D Renders', 'People', 'Patterns'];
 
+// Gradient-map preset swatches — CSS previews mirroring the LUTs in
+// Canvas.tsx's GRADIENT_MAPS, shown as a pick grid in the effect panel.
+const GRADIENT_MAP_SWATCHES: { id: BackgroundState['gradientMapPreset']; label: string; css: string }[] = [
+  { id: 'thermal',  label: 'Thermal',  css: 'linear-gradient(90deg,#000019,#5f0087,#dc2d2d,#ffaa00,#ffffdc)' },
+  { id: 'infrared', label: 'Infrared', css: 'linear-gradient(90deg,#0c0020,#c8165c,#ff782a,#fff0b6)' },
+  { id: 'acid',     label: 'Acid',     css: 'linear-gradient(90deg,#140028,#ff008c,#00dcff,#dcff00)' },
+  { id: 'x-ray',    label: 'X-Ray',    css: 'linear-gradient(90deg,#050a19,#285c8e,#f0faff)' },
+  { id: 'sunset',   label: 'Sunset',   css: 'linear-gradient(90deg,#1a0a3c,#be345c,#fa823c,#ffe196)' },
+  { id: 'toxic',    label: 'Toxic',    css: 'linear-gradient(90deg,#0a140a,#1e782a,#96dc28,#f0ffb6)' },
+  { id: 'gold',     label: 'Gold',     css: 'linear-gradient(90deg,#1c0f00,#aa6e14,#f0c85c,#fff5cd)' },
+  { id: 'mono',     label: 'Mono',     css: 'linear-gradient(90deg,#0f0f12,#f5f5f0)' },
+];
+
 interface PexelsPhoto {
   id: number; alt: string; photographer: string;
   src: { small: string; medium: string; large2x: string };
@@ -2084,6 +2097,39 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             </Row>
             <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
               Oversaturated limited-palette color with a fine ordered texture — vintage linen travel postcard at fine Texture, 90s videogame at chunky.
+            </p>
+          </EffectSection>
+
+          {/* Gradient Map */}
+          <EffectSection label="Gradient Map" number={16} enabled={state.gradientMapEnabled}
+            onToggle={v => set({ gradientMapEnabled: v })}>
+            <div className="grid grid-cols-2 gap-1">
+              {GRADIENT_MAP_SWATCHES.map(s => (
+                <button key={s.id} onClick={() => set({ gradientMapPreset: s.id })}
+                  title={s.label}
+                  className="h-7 rounded-md relative overflow-hidden transition-all"
+                  style={{
+                    background: s.css,
+                    boxShadow: state.gradientMapPreset === s.id
+                      ? `0 0 0 2px ${T.text}` : `inset 0 0 0 1px ${T.border}`,
+                  }}>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold uppercase tracking-wide"
+                    style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.75)' }}>{s.label}</span>
+                </button>
+              ))}
+            </div>
+            <Row label="Strength">
+              <HwSlider value={state.gradientMapStrength} min={0} max={100}
+                onChange={v => set({ gradientMapStrength: v })} />
+            </Row>
+            <Row label="Invert">
+              {/* Flip which end of the ramp maps to shadows vs highlights */}
+              <HwSegment options={[{ id: 'off', label: 'Normal' }, { id: 'on', label: 'Invert' }]}
+                value={state.gradientMapInvert ? 'on' : 'off'}
+                onChange={v => set({ gradientMapInvert: v === 'on' })} />
+            </Row>
+            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+              Recolours the image by brightness through a preset ramp — thermal camera, x-ray, infrared, acid neon. Strength blends it back over the original.
             </p>
           </EffectSection>
 

@@ -1736,6 +1736,62 @@ const applySplitTone = (
   return out;
 };
 
+// ─── Gradient Map ───────────────────────────────────────────────────────────
+// Maps image luminance through a colour gradient (a look-up table): darkest
+// tones take the first stop's colour, brightest the last, midtones interpolate.
+// Recolours the whole image from a single brightness axis — thermal-camera,
+// infrared, x-ray, acid-neon looks etc. Blended over the original by strength,
+// so it works as a subtle tint or a full false-colour remap.
+
+type GradientStop = { at: number; color: [number, number, number] };
+
+const GRADIENT_MAPS: Record<string, GradientStop[]> = {
+  thermal:  [{at:0,color:[0,0,25]},{at:0.25,color:[95,0,135]},{at:0.5,color:[220,45,45]},{at:0.75,color:[255,170,0]},{at:1,color:[255,255,220]}],
+  infrared: [{at:0,color:[12,0,32]},{at:0.4,color:[200,22,92]},{at:0.7,color:[255,120,42]},{at:1,color:[255,240,182]}],
+  acid:     [{at:0,color:[20,0,40]},{at:0.35,color:[255,0,140]},{at:0.65,color:[0,220,255]},{at:1,color:[220,255,0]}],
+  'x-ray':  [{at:0,color:[5,10,25]},{at:0.5,color:[40,92,142]},{at:1,color:[240,250,255]}],
+  sunset:   [{at:0,color:[26,10,60]},{at:0.4,color:[190,52,92]},{at:0.7,color:[250,130,60]},{at:1,color:[255,225,150]}],
+  toxic:    [{at:0,color:[10,20,10]},{at:0.4,color:[30,120,42]},{at:0.7,color:[150,220,40]},{at:1,color:[240,255,182]}],
+  gold:     [{at:0,color:[28,15,0]},{at:0.5,color:[170,110,20]},{at:0.85,color:[240,200,92]},{at:1,color:[255,245,205]}],
+  mono:     [{at:0,color:[15,15,18]},{at:1,color:[245,245,240]}],
+};
+
+const sampleGradient = (stops: GradientStop[], t: number): [number, number, number] => {
+  if (t <= stops[0].at) return stops[0].color;
+  const last = stops[stops.length - 1];
+  if (t >= last.at) return last.color;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (t >= a.at && t <= b.at) {
+      const f = (t - a.at) / (b.at - a.at || 1);
+      return [
+        a.color[0] + (b.color[0] - a.color[0]) * f,
+        a.color[1] + (b.color[1] - a.color[1]) * f,
+        a.color[2] + (b.color[2] - a.color[2]) * f,
+      ];
+    }
+  }
+  return last.color;
+};
+
+const applyGradientMap = (
+  data: Uint8ClampedArray, w: number, h: number,
+  preset: string, strength: number, invert: boolean,
+): Uint8ClampedArray => {
+  const stops = GRADIENT_MAPS[preset] ?? GRADIENT_MAPS.thermal;
+  const str = strength / 100;
+  const out = new Uint8ClampedArray(data);
+  for (let i = 0; i < data.length; i += 4) {
+    let lum = (data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114) / 255;
+    if (invert) lum = 1 - lum;
+    const [nr, ng, nb] = sampleGradient(stops, lum);
+    out[i]   = clamp(data[i]   + (nr - data[i])   * str);
+    out[i+1] = clamp(data[i+1] + (ng - data[i+1]) * str);
+    out[i+2] = clamp(data[i+2] + (nb - data[i+2]) * str);
+  }
+  return out;
+};
+
 // ─── Riso Print ─────────────────────────────────────────────────────────────
 // Simulates Risograph duplicator printing: two flat spot-color ink layers,
 // each independently halftone-dithered from the source luminance, offset from
@@ -2116,6 +2172,7 @@ interface ProcessedImageProps {
   layers: import('../types').ImageLayer[];
   edgeGlowEnabled: boolean; edgeGlowColor: string; edgeGlowIntensity: number; edgeGlowBloom: number; edgeGlowDarken: number;
   splitToneEnabled: boolean; splitToneShadowColor: string; splitToneHighlightColor: string; splitToneStrength: number; splitToneBalance: number;
+  gradientMapEnabled: boolean; gradientMapPreset: string; gradientMapStrength: number; gradientMapInvert: boolean;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
@@ -2195,6 +2252,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     imageUrl, imageFlipH, imageFlipV, layers,
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
+    gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
     canvasDitherStyle, canvasDitherScale,
@@ -2328,6 +2386,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           let processed = new Uint8ClampedArray(data);
           if (colorGradeEnabled)   processed = applyGrade(processed, colorGradePreset, colorGradeStrength);
           if (splitToneEnabled)    processed = applySplitTone(processed, w, h, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance);
+          if (gradientMapEnabled)  processed = applyGradientMap(processed, w, h, gradientMapPreset, gradientMapStrength, gradientMapInvert);
           if (edgeGlowEnabled)     processed = applyEdgeGlow(processed, w, h, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken);
           if (imageGlitchEnabled)  processed = applyImageGlitch(processed, w, h, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit, imageGlitchStyle);
           if (dispersionEnabled)   processed = applyDispersion(processed, w, h, dispersionThreshold, dispersionStrength, dispersionDirection, dispersionSpread);
@@ -2394,6 +2453,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
   }, [imageUrl, imageFlipH, imageFlipV, JSON.stringify(layers),
       edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
       splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
+      gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
       ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
@@ -2588,6 +2648,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     layers,
     edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
     splitToneEnabled, splitToneShadowColor, splitToneHighlightColor, splitToneStrength, splitToneBalance,
+    gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
     dispersionEnabled, dispersionStrength, dispersionThreshold, dispersionDirection, dispersionSpread,
@@ -2614,6 +2675,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
   const useProcessedCanvas = !!imageUrl && (
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
+    (gradientMapEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
@@ -2710,6 +2772,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 layers={layers ?? []}
                 edgeGlowEnabled={edgeGlowEnabled ?? false} edgeGlowColor={edgeGlowColor ?? '#00ffff'} edgeGlowIntensity={edgeGlowIntensity ?? 60} edgeGlowBloom={edgeGlowBloom ?? 8} edgeGlowDarken={edgeGlowDarken ?? 0.5}
                 splitToneEnabled={splitToneEnabled ?? false} splitToneShadowColor={splitToneShadowColor ?? '#1a237e'} splitToneHighlightColor={splitToneHighlightColor ?? '#ff6d00'} splitToneStrength={splitToneStrength ?? 60} splitToneBalance={splitToneBalance ?? 0}
+                gradientMapEnabled={gradientMapEnabled ?? false} gradientMapPreset={gradientMapPreset ?? 'thermal'} gradientMapStrength={gradientMapStrength ?? 100} gradientMapInvert={gradientMapInvert ?? false}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}

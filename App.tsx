@@ -11,9 +11,11 @@ import TeamsPage from './components/TeamsPage';
 import BottomSheet, { PEEK_HEIGHT } from './components/BottomSheet';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useVisualViewport } from './hooks/useVisualViewport';
+import EggToast from './components/EggToast';
 import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 import { rollDice } from './dice';
+import { EASTER_EGGS, EasterEgg } from './easterEggs';
 
 export { DEFAULT };
 
@@ -21,6 +23,11 @@ export { DEFAULT };
 
 // Phosphor's dice icons are named by word (ph-dice-five), not numeral.
 const DICE_FACE_WORDS = ['one', 'two', 'three', 'four', 'five', 'six'];
+
+// Internal kill switches, not user-facing — flip to false and redeploy to
+// hide either feature instantly without touching the implementation.
+const EXPORT_FLOURISH_ENABLED = false;
+const EASTER_EGGS_ENABLED = false;
 
 const RATIOS = [
   { id: 'free',  label: 'Free',  css: ''       },
@@ -164,6 +171,28 @@ const App: React.FC = () => {
     return () => clearTimeout(historyTimer.current);
   }, [state]);
 
+  // Easter eggs — quiet discovery, not gamification: no badges, no streaks,
+  // nothing persisted. foundEggs is in-memory only (dies on reload) so an
+  // egg found last session can always be stumbled into again, rather than
+  // becoming a tracked "already unlocked" checklist item. The dedupe Set
+  // also doubles as edge-detection for free — re-matching an id already in
+  // it is a no-op, so nudging a slider back and forth inside an
+  // already-matched range doesn't refire, and only one new match surfaces
+  // per state-change tick even if a Look/History restore satisfies two at once.
+  const foundEggs = useRef<Set<string>>(new Set());
+  const [activeEgg, setActiveEgg] = useState<EasterEgg | null>(null);
+  const eggDismissTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!EASTER_EGGS_ENABLED) return;
+    const match = EASTER_EGGS.find(egg => !foundEggs.current.has(egg.id) && egg.test(state));
+    if (match) {
+      foundEggs.current.add(match.id);
+      setActiveEgg(match);
+      clearTimeout(eggDismissTimer.current);
+      eggDismissTimer.current = setTimeout(() => setActiveEgg(null), 4000);
+    }
+  }, [state]);
+
   // Clear editingLayerId if the layer it points at no longer exists —
   // covers deletion mid-edit without relying on every call site remembering to.
   useEffect(() => {
@@ -261,7 +290,7 @@ const App: React.FC = () => {
   const diceSafety = useRef<ReturnType<typeof setTimeout>>();
   const sawProcessing = useRef(false);
 
-  useEffect(() => () => { clearTimeout(diceKickoff.current); clearTimeout(diceSafety.current); }, []);
+  useEffect(() => () => { clearTimeout(diceKickoff.current); clearTimeout(diceSafety.current); clearTimeout(exportSafety.current); clearTimeout(eggDismissTimer.current); }, []);
 
   // Keep cycling the face for as long as the overlay is up (spin + wait) —
   // most die faces are close to rotationally symmetric, so a single fixed
@@ -295,6 +324,26 @@ const App: React.FC = () => {
       diceSafety.current = setTimeout(() => setDicePhase('idle'), 2500);
     }, 480);
   };
+
+  // Export flourish — RightPanel's own handleExport drives this via
+  // onExportPhaseChange (the mirror of Canvas's onProcessingChange, just
+  // flowing the other direction), since a 4x capture can take several real
+  // seconds and 'processing' is held open by RightPanel's own await, not a
+  // guess. Unlike Dice there's no separate pipeline-recompute signal to
+  // wait on — RightPanel's own `finally` is the sole source of truth for
+  // "done" — so a single safety timeout reset on every phase change is
+  // enough, no sawProcessing-style edge tracking needed.
+  const [exportPhase, setExportPhase] = useState<'idle' | 'winding' | 'processing'>('idle');
+  const exportSafety = useRef<ReturnType<typeof setTimeout>>();
+  const handleExportPhaseChange = (phase: 'idle' | 'winding' | 'processing') => {
+    clearTimeout(exportSafety.current);
+    setExportPhase(phase);
+    if (phase !== 'idle') {
+      exportSafety.current = setTimeout(() => setExportPhase('idle'), 6000);
+    }
+  };
+
+  useEffect(() => () => { clearTimeout(exportSafety.current); }, []);
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
@@ -359,6 +408,49 @@ const App: React.FC = () => {
               <div style={{ animation: 'herokit-dice-pulse 1.8s ease-in-out infinite' }}>
                 <i className={`ph-bold ph-dice-${DICE_FACE_WORDS[diceFace - 1]} text-white animate-spin`}
                   style={{ fontSize: 72, filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.4))' }} />
+              </div>
+            </div>
+          )}
+
+          {/* Export flourish — a Polaroid-style card ejects in from above
+              while RightPanel's handleExport does the real toPng/toJpeg
+              capture, so exporting reads as a small tactile moment instead
+              of an instant silent download. 'winding' is a fixed cosmetic
+              slide-in-and-settle (no real work yet); 'processing' holds the
+              settled card with a soft developing sheen for as long as the
+              real capture takes (can be several seconds at 4x); clearing
+              back to 'idle' is driven by RightPanel's own promise
+              resolution (see onExportPhaseChange), with App's own safety
+              timeout as a fallback. No early pixel capture — the photo
+              window is a flat decorative fill, not a live preview. */}
+          {EXPORT_FLOURISH_ENABLED && exportPhase !== 'idle' && (
+            <div className="absolute inset-0 z-[136] flex items-start justify-center pointer-events-none overflow-hidden bg-black/10">
+              <div
+                className="bg-white shadow-2xl"
+                style={{
+                  width: '42%',
+                  aspectRatio: '4 / 5',
+                  marginTop: '18%',
+                  padding: '4% 4% 14%',
+                  transform: 'translateY(0) rotate(-1.5deg)',
+                  animation: exportPhase === 'winding'
+                    ? 'herokit-polaroid-eject 420ms cubic-bezier(0.2,0.8,0.3,1) both'
+                    : undefined,
+                  transition: 'opacity 260ms ease',
+                  boxShadow: '0 20px 44px rgba(0,0,0,0.35)',
+                }}
+              >
+                <div className="relative w-full h-full overflow-hidden" style={{ background: '#efece4' }}>
+                  {exportPhase === 'processing' && (
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background: 'linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.55) 50%, transparent 65%)',
+                        animation: 'herokit-polaroid-sheen 1.6s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -613,7 +705,8 @@ const App: React.FC = () => {
       {isMobile ? (
         <BottomSheet state={sheetState} onStateChange={setSheetState}>
           <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
-            editingLayerId={editingLayerId} onEditLayer={handleEditLayer} mobile />
+            editingLayerId={editingLayerId} onEditLayer={handleEditLayer} mobile
+            onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
         </BottomSheet>
       ) : (
         <div
@@ -621,7 +714,8 @@ const App: React.FC = () => {
         >
           <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
             <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
-              editingLayerId={editingLayerId} onEditLayer={handleEditLayer} />
+              editingLayerId={editingLayerId} onEditLayer={handleEditLayer}
+              onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
           </div>
         </div>
       )}
@@ -648,6 +742,8 @@ const App: React.FC = () => {
           kbd: {typeof window !== 'undefined' ? Math.round(window.innerHeight - viewportHeight - viewportOffsetTop) : 0}
         </div>
       )}
+
+      {EASTER_EGGS_ENABLED && <EggToast message={activeEgg?.message ?? null} />}
     </div>
   );
 };

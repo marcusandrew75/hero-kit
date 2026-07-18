@@ -1252,9 +1252,10 @@ interface RightPanelProps {
   editingLayerId: string | null;
   onEditLayer: (id: string | null) => void;
   mobile?: boolean;
+  onExportPhaseChange?: (phase: 'idle' | 'winding' | 'processing') => void;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
@@ -1294,7 +1295,15 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
     const node = document.getElementById('heroken-canvas');
     if (!node) return;
     setExporting(true);
+    onExportPhaseChange?.('winding');
     try {
+      // Cosmetic windup only — no real work yet — so the eject animation
+      // gets to fully settle before the (possibly slow, at 4x) capture
+      // starts, mirroring the Dice roll's spin-then-work pacing. Skipped
+      // entirely when the flourish is disabled (no callback passed in) —
+      // no point delaying a real export for an animation that won't show.
+      if (onExportPhaseChange) await new Promise(r => setTimeout(r, 420));
+      onExportPhaseChange?.('processing');
       const pr = resolution === '4x' ? 4 : resolution === '2x' ? 2 : 1;
       const dataUrl = format === 'JPG'
         ? await toJpeg(node, { pixelRatio: pr, quality: 0.95 })
@@ -1303,7 +1312,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
       a.download = `herokit.${format.toLowerCase()}`;
       a.href = dataUrl; a.click();
     } catch { alert('Export failed — try a lower resolution.'); }
-    finally { setExporting(false); }
+    finally { setExporting(false); onExportPhaseChange?.('idle'); }
   };
 
   const hasSource = !!(state.imageUrl || state.videoUrl);

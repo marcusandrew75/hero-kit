@@ -113,6 +113,34 @@
         0%, 100% { transform: scale(1); }
         50%      { transform: scale(1.18); }
       }
+
+      /* Export flourish — Polaroid card sliding in and settling with a
+         slight overshoot, so it reads as physically emerging from a slot
+         rather than a flat linear reveal. */
+      @keyframes herokit-polaroid-eject {
+        0%   { transform: translateY(-140%) rotate(0deg); opacity: 0; }
+        60%  { opacity: 1; }
+        70%  { transform: translateY(4%) rotate(-1deg); }
+        100% { transform: translateY(0%) rotate(-1.5deg); opacity: 1; }
+      }
+      /* Soft diagonal sheen looping across the "developing" photo window
+         while the real export capture runs — reads as light catching a
+         print, not a generic spinner. */
+      @keyframes herokit-polaroid-sheen {
+        0%   { transform: translate(-40%, -40%); opacity: 0; }
+        50%  { transform: translate(0%, 0%);     opacity: 1; }
+        100% { transform: translate(40%, 40%);   opacity: 0; }
+      }
+
+      /* Easter-egg toast — fade in, hold, fade out. Purely cosmetic; the
+         4s JS timeout in App.tsx is the actual source of truth for when it
+         unmounts, this just needs to stay within that window. */
+      @keyframes herokit-egg-toast {
+        0%   { opacity: 0; transform: translateY(6px); }
+        8%   { opacity: 1; transform: translateY(0); }
+        85%  { opacity: 1; transform: translateY(0); }
+        100% { opacity: 0; transform: translateY(0); }
+      }
       .heroken-slider::-moz-range-thumb {
         width: 11px;
         height: 11px;

@@ -229,7 +229,7 @@ const GALLERY = [
 const GALLERY_INITIAL = 8;
 const PEXELS_KEY      = (import.meta as any).env?.VITE_PEXELS_API_KEY as string;
 const PEXELS_QUICK   = ['Wallpaper', 'Background', 'Texture', 'Landscape', 'Atmospheric'];
-const UNSPLASH_QUICK = ['Illustrations', 'Experimental', 'Wallpapers', '3D Renders', 'People', 'Patterns'];
+const UNSPLASH_QUICK = ['Experimental', 'Wallpapers', '3D Renders', 'People', 'Patterns'];
 
 interface PexelsPhoto {
   id: number; alt: string; photographer: string;

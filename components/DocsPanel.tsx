@@ -30,7 +30,7 @@ const DOCS: DocSection[] = [
       },
       {
         title: 'ASCII Dither',
-        body: `The oldest form of "computer art" in this list by a wide margin. Line printers in the 1960s and 70s couldn't print anything but characters, so density ramps of text glyphs became the only way to represent a photographic image on paper — light-to-dark mapped to sparse-to-dense characters. That constraint outlived the hardware: ASCII art became a defining visual language of BBS and demoscene culture through the 80s and 90s, and it's had a steady resurgence in glitch and generative art since. Duotone-off renders each character in its own sampled source color (closer to modern colour-ASCII/BBS art); Duotone-on renders flat ink-on-paper, closer to the original terminal aesthetic.`,
+        body: `The oldest form of "computer art" in this list by a wide margin. Line printers in the 1960s and 70s couldn't print anything but characters, so density ramps of text glyphs became the only way to represent a photographic image on paper — light-to-dark mapped to sparse-to-dense characters. That constraint outlived the hardware: ASCII art became a defining visual language of BBS and demoscene culture through the 80s and 90s, and it's had a steady resurgence in glitch and generative art since. Duotone-off renders each character in its own sampled source color (closer to modern color-ASCII/BBS art); Duotone-on renders flat ink-on-paper, closer to the original terminal aesthetic.`,
       },
     ],
   },
@@ -131,9 +131,16 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.0', date: '18 Jul 2026',
+    items: [
+      'Added: Low-Poly — rebuilds the image from flat-shaded triangles, biased toward real edges so facets land on the photo\'s actual silhouette rather than an even mosaic. Joins Relief, Contour and Kaleidoscope in Structure & Form, and the Dice pool',
+      'Improved: the Effects panel is now organised into five collapsible families (Color & Tone, Print & Halftone, Distort & Glitch, Structure & Form, Blur & Light) instead of one long flat list — each closed group shows a lit indicator with a count when it holds active effects, so nothing active gets lost out of view',
+    ],
+  },
+  {
     version: '3.9', date: '18 Jul 2026',
     items: [
-      'Added: four new effects that go beyond recolouring the image — Gradient Map (thermal / infrared / x-ray / acid false-colour ramps), Relief (lights the image like a carved, embossed metal or stone surface), Contour (turns a photo into a topographic map of elevation lines), and Kaleidoscope (folds any image into a mirrored mandala). All four join the Dice pool',
+      'Added: four new effects that go beyond recoloring the image — Gradient Map (thermal / infrared / x-ray / acid false-color ramps), Relief (lights the image like a carved, embossed metal or stone surface), Contour (turns a photo into a topographic map of elevation lines), and Kaleidoscope (folds any image into a mirrored mandala). All four join the Dice pool',
     ],
   },
   {

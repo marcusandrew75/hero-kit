@@ -46,6 +46,7 @@ const DUOTONE_PAIRS: [string, string][] = [
 
 const EDGE_GLOW_COLORS = ['#00ffff', '#ff00aa', '#ffd23f', '#39ff14', '#ff6b35'];
 const RELIEF_TINTS = ['#8a8a8a', '#b08d57', '#9c9284', '#6b7280', '#b87333']; // steel/bronze/stone/slate/copper
+const LOW_POLY_EDGE_COLORS = ['#000000', '#ffffff', '#1a2b1a', '#e84320'];
 const SPLIT_SHADOW_COLORS = ['#1a237e', '#0a1f14', '#2d1b00'];
 const SPLIT_HIGHLIGHT_COLORS = ['#ff6d00', '#ffd23f', '#ee4266'];
 const AMBIENT_COLORS = ['#6366f1', '#ff6b35', '#06d6a0', '#ffd23f', '#ee4266'];
@@ -128,6 +129,17 @@ const HEROES: Hero[] = [
       contourBgColor: DEFAULT.contourBgColor,
       // Either "lines over the photo" or "clean tinted map" — two distinct looks
       contourFill: chance(0.5) ? randInt(15, 35) : randInt(70, 95),
+    }),
+  },
+  {
+    id: 'lowPoly',
+    make: () => ({
+      lowPolyEnabled: true,
+      lowPolyPoints: randInt(150, 700),
+      lowPolyEdgeBias: randInt(40, 80),
+      lowPolyShowEdges: chance(0.35),
+      lowPolyEdgeColor: pick(LOW_POLY_EDGE_COLORS),
+      lowPolyStrength: randInt(85, 100),
     }),
   },
   {

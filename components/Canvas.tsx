@@ -2,6 +2,7 @@
 import React, { useRef, useEffect } from 'react';
 import { BackgroundState } from '../types';
 import { Warp, Voronoi, Metaballs, PulsingBorder, GodRays, SmokeRing } from '@paper-design/shaders-react';
+import Delaunator from 'delaunator';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -666,7 +667,7 @@ const GRADES: Record<GradePreset, (r: number, g: number, b: number) => [number, 
     ];
   },
   'lomo': (r, g, b) => {
-    // Over-saturated, strong colours, colour cast
+    // Over-saturated, strong colors, color cast
     const lum = r * 0.299 + g * 0.587 + b * 0.114;
     const sat = 1.5;
     const nr = r * sat + lum * (1 - sat), ng = g * sat + lum * (1 - sat), nb = b * sat + lum * (1 - sat);
@@ -680,7 +681,7 @@ const GRADES: Record<GradePreset, (r: number, g: number, b: number) => [number, 
     return [clamp(nr * 0.78 + 35), clamp(ng * 0.82 + 30), clamp(nb * 0.9 + 28)];
   },
   'vhs': (r, g, b) => {
-    // Green/yellow cast, slight colour offset feel, noisy
+    // Green/yellow cast, slight color offset feel, noisy
     const lum = r * 0.299 + g * 0.587 + b * 0.114;
     const noise = (Math.random() - 0.5) * 12;
     return [clamp(r * 0.88 + noise * 0.5), clamp(g * 1.05 + 8 + noise * 0.3), clamp(b * 0.82 - 5 + noise * 0.5)];
@@ -765,6 +766,41 @@ const applyPixelSort = (
     if (inRun) flush(indices.length);
   }
   return out;
+};
+
+// ─── Shared Sobel edge magnitude ─────────────────────────────────────────────
+// Normalized [0,1] gradient-magnitude map on luminance — the same computation
+// was independently copy-pasted in applyDispersion and applyEdgeGlow; factored
+// out here and reused by both plus the Low-Poly point sampler below. (Relief's
+// own inline Sobel is intentionally left separate — it samples with edge
+// clamping to get real border gradients for its per-pixel lighting dot
+// product, a different shape than this normalized-magnitude/zeroed-border map.)
+
+const computeSobelEdges = (data: Uint8ClampedArray, w: number, h: number): Float32Array => {
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
+  }
+  const GX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+  const GY = [ 1, 2, 1,  0, 0, 0, -1,-2,-1];
+  const edges = new Float32Array(w * h);
+  let maxMag = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      let gx = 0, gy = 0, k = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const v = lum[(y + dy) * w + (x + dx)];
+          gx += GX[k] * v; gy += GY[k] * v; k++;
+        }
+      }
+      const mag = Math.sqrt(gx * gx + gy * gy);
+      edges[y * w + x] = mag;
+      if (mag > maxMag) maxMag = mag;
+    }
+  }
+  if (maxMag > 0) for (let i = 0; i < edges.length; i++) edges[i] /= maxMag;
+  return edges;
 };
 
 // ─── Dispersion ──────────────────────────────────────────────────────────────
@@ -1645,23 +1681,7 @@ const applyEdgeGlow = (
   color: string, intensity: number, bloom: number, darken: number,
 ): Uint8ClampedArray => {
   // Sobel edges on luminance
-  const lum = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    lum[i] = (data[i*4]*0.299 + data[i*4+1]*0.587 + data[i*4+2]*0.114) / 255;
-  }
-  const GX = [-1,0,1,-2,0,2,-1,0,1], GY = [1,2,1,0,0,0,-1,-2,-1];
-  const edges = new Float32Array(w * h);
-  let mx = 0;
-  for (let y = 1; y < h-1; y++) {
-    for (let x = 1; x < w-1; x++) {
-      let gx = 0, gy = 0, k = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const v = lum[(y+dy)*w + (x+dx)]; gx += GX[k]*v; gy += GY[k]*v; k++;
-      }
-      const mag = Math.sqrt(gx*gx + gy*gy); edges[y*w+x] = mag; if (mag > mx) mx = mag;
-    }
-  }
-  if (mx > 0) for (let i = 0; i < edges.length; i++) edges[i] /= mx;
+  const edges = computeSobelEdges(data, w, h);
 
   const hex = color.replace('#','');
   const cr = parseInt(hex.slice(0,2),16)||0, cg = parseInt(hex.slice(2,4),16)||255, cb = parseInt(hex.slice(4,6),16)||255;
@@ -1705,7 +1725,7 @@ const applyEdgeGlow = (
 };
 
 // ─── Split Tone ───────────────────────────────────────────────────────────────
-// Maps shadow tones to one colour and highlight tones to another
+// Maps shadow tones to one color and highlight tones to another
 
 const applySplitTone = (
   data: Uint8ClampedArray, w: number, h: number,
@@ -1737,11 +1757,11 @@ const applySplitTone = (
 };
 
 // ─── Gradient Map ───────────────────────────────────────────────────────────
-// Maps image luminance through a colour gradient (a look-up table): darkest
-// tones take the first stop's colour, brightest the last, midtones interpolate.
-// Recolours the whole image from a single brightness axis — thermal-camera,
+// Maps image luminance through a color gradient (a look-up table): darkest
+// tones take the first stop's color, brightest the last, midtones interpolate.
+// Recolors the whole image from a single brightness axis — thermal-camera,
 // infrared, x-ray, acid-neon looks etc. Blended over the original by strength,
-// so it works as a subtle tint or a full false-colour remap.
+// so it works as a subtle tint or a full false-color remap.
 
 type GradientStop = { at: number; color: [number, number, number] };
 
@@ -1797,7 +1817,7 @@ const applyGradientMap = (
 // the per-pixel brightness gradient (Sobel) is dotted with a light vector to
 // shade the surface, giving a carved / embossed / hammered-metal look with real
 // directional lighting. Colorize blends from pure lit material (steel, bronze,
-// stone) toward the original colours re-lit by the same shading.
+// stone) toward the original colors re-lit by the same shading.
 
 const applyRelief = (
   data: Uint8ClampedArray, w: number, h: number,
@@ -1885,7 +1905,7 @@ const applyContour = (
       if (isLine) {
         out[si] = lr; out[si+1] = lg; out[si+2] = lb;
       } else {
-        const t = L > 1 ? b / (L - 1) : 0; // band tint ramps ground → line colour
+        const t = L > 1 ? b / (L - 1) : 0; // band tint ramps ground → line color
         const tr = gr + (lr - gr) * t;
         const tg = gg + (lg - gg) * t;
         const tb = gb + (lb - gb) * t;
@@ -1894,6 +1914,124 @@ const applyContour = (
         out[si+2] = clamp(data[si+2] + (tb - data[si+2]) * f);
       }
     }
+  }
+  return out;
+};
+
+// ─── Low-Poly / Triangulate ──────────────────────────────────────────────────
+// Rebuilds the image from flat-shaded triangles: sample a point set biased
+// toward high-contrast areas (so triangle boundaries land on real edges, not
+// just an even mosaic), Delaunay-triangulate it (via the delaunator package —
+// hand-rolling Delaunay is real correctness risk this codebase's other
+// hand-written math doesn't carry), then fill each triangle with a flat
+// color averaged from a few samples around its centroid.
+
+const sampleLowPolyPoints = (
+  edges: Float32Array, w: number, h: number, count: number, edgeBias: number,
+): [number, number][] => {
+  const points: [number, number][] = [];
+  const biasFrac = Math.max(0, Math.min(100, edgeBias)) / 100;
+
+  // Always keep a grid baseline even at max bias, so flat regions (sky, walls)
+  // still get even coverage instead of a handful of huge degenerate triangles.
+  const gridCount = Math.max(8, Math.round(count * (1 - biasFrac * 0.7)));
+  const edgeCount = Math.max(0, count - gridCount);
+
+  const cols = Math.max(2, Math.round(Math.sqrt(gridCount * (w / h))));
+  const rows = Math.max(2, Math.round(gridCount / cols));
+  const cw = w / cols, ch = h / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const jx = (Math.random() - 0.5) * cw * 0.8;
+      const jy = (Math.random() - 0.5) * ch * 0.8;
+      points.push([
+        Math.min(w - 1, Math.max(0, c * cw + cw / 2 + jx)),
+        Math.min(h - 1, Math.max(0, r * ch + ch / 2 + jy)),
+      ]);
+    }
+  }
+
+  // Rejection-sample extra points weighted by local edge strength — capped
+  // attempt budget so a low-contrast image (little to reject against) can't
+  // spin forever trying to fill the edge-point quota.
+  let added = 0, attempts = 0;
+  const maxAttempts = edgeCount * 40;
+  while (added < edgeCount && attempts < maxAttempts) {
+    attempts++;
+    const x = Math.random() * w, y = Math.random() * h;
+    const ei = Math.min(h - 1, Math.floor(y)) * w + Math.min(w - 1, Math.floor(x));
+    if (Math.random() < edges[ei]) {
+      points.push([x, y]);
+      added++;
+    }
+  }
+
+  // Corners — guarantees edge-to-edge triangulation with no untriangulated gap.
+  points.push([0, 0], [w - 1, 0], [0, h - 1], [w - 1, h - 1]);
+  return points;
+};
+
+const applyLowPoly = (
+  data: Uint8ClampedArray, w: number, h: number,
+  points: [number, number][], showEdges: boolean, edgeColor: string, strength: number,
+): Uint8ClampedArray => {
+  const delaunay = Delaunator.from(points);
+  const tri = delaunay.triangles;
+
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  const ctx = off.getContext('2d')!;
+
+  const clampCoord = (v: number, max: number) => Math.max(0, Math.min(max, v));
+  const sampleAt = (sx: number, sy: number, ch: number) =>
+    bilinearSample(data, w, h, clampCoord(sx, w - 1), clampCoord(sy, h - 1), ch);
+
+  for (let t = 0; t < tri.length; t += 3) {
+    const [x0, y0] = points[tri[t]];
+    const [x1, y1] = points[tri[t + 1]];
+    const [x2, y2] = points[tri[t + 2]];
+    const cx = (x0 + x1 + x2) / 3, cy = (y0 + y1 + y2) / 3;
+    // Centroid plus a sample 40% toward each vertex — a cheap 4-point average
+    // so one noisy source pixel doesn't decide a whole triangle's color.
+    const sxs = [cx, cx + (x0 - cx) * 0.4, cx + (x1 - cx) * 0.4, cx + (x2 - cx) * 0.4];
+    const sys = [cy, cy + (y0 - cy) * 0.4, cy + (y1 - cy) * 0.4, cy + (y2 - cy) * 0.4];
+    let r = 0, g = 0, b = 0;
+    for (let s = 0; s < 4; s++) {
+      r += sampleAt(sxs[s], sys[s], 0);
+      g += sampleAt(sxs[s], sys[s], 1);
+      b += sampleAt(sxs[s], sys[s], 2);
+    }
+    ctx.fillStyle = `rgb(${Math.round(r / 4)},${Math.round(g / 4)},${Math.round(b / 4)})`;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Wireframe as a separate pass over every triangle, so strokes read as
+  // crisp lines rather than being partially painted over by a neighbour's fill.
+  if (showEdges) {
+    ctx.strokeStyle = edgeColor;
+    ctx.lineWidth = 1;
+    for (let t = 0; t < tri.length; t += 3) {
+      const [x0, y0] = points[tri[t]];
+      const [x1, y1] = points[tri[t + 1]];
+      const [x2, y2] = points[tri[t + 2]];
+      ctx.beginPath();
+      ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+
+  const triData = ctx.getImageData(0, 0, w, h).data;
+  const str = Math.max(0, Math.min(100, strength)) / 100;
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    out[i]   = clamp(data[i]   + (triData[i]   - data[i])   * str);
+    out[i+1] = clamp(data[i+1] + (triData[i+1] - data[i+1]) * str);
+    out[i+2] = clamp(data[i+2] + (triData[i+2] - data[i+2]) * str);
+    out[i+3] = data[i+3];
   }
   return out;
 };
@@ -2343,6 +2481,7 @@ interface ProcessedImageProps {
   gradientMapEnabled: boolean; gradientMapPreset: string; gradientMapStrength: number; gradientMapInvert: boolean;
   reliefEnabled: boolean; reliefAngle: number; reliefDepth: number; reliefColorize: number; reliefTint: string;
   contourEnabled: boolean; contourLevels: number; contourLineColor: string; contourBgColor: string; contourFill: number;
+  lowPolyEnabled: boolean; lowPolyPoints: number; lowPolyEdgeBias: number; lowPolyShowEdges: boolean; lowPolyEdgeColor: string; lowPolyStrength: number;
   kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
@@ -2426,6 +2565,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+    lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
@@ -2570,6 +2710,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (pixelSortEnabled)    processed = applyPixelSort(processed, w, h, pixelSortThreshold, pixelSortDirection, pixelSortMode);
           if (reliefEnabled)       processed = applyRelief(processed, w, h, reliefAngle, reliefDepth, reliefColorize, reliefTint);
           if (contourEnabled)      processed = applyContour(processed, w, h, contourLevels, contourLineColor, contourBgColor, contourFill);
+          if (lowPolyEnabled)      processed = applyLowPoly(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, lowPolyPoints, lowPolyEdgeBias), lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
@@ -2633,6 +2774,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
       reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
       contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+      lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
       kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
@@ -2644,7 +2786,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
       silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
       postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
-      halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
+        halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
       halftoneDuotoneEnabled, halftoneBgColor,
       effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
       imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -2831,6 +2973,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     gradientMapEnabled, gradientMapPreset, gradientMapStrength, gradientMapInvert,
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
+    lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -2859,6 +3002,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
     (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
+    (lowPolyEnabled ?? false) ||
     (kaleidoscopeEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
@@ -2959,6 +3103,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 gradientMapEnabled={gradientMapEnabled ?? false} gradientMapPreset={gradientMapPreset ?? 'thermal'} gradientMapStrength={gradientMapStrength ?? 100} gradientMapInvert={gradientMapInvert ?? false}
                 reliefEnabled={reliefEnabled ?? false} reliefAngle={reliefAngle ?? 135} reliefDepth={reliefDepth ?? 55} reliefColorize={reliefColorize ?? 25} reliefTint={reliefTint ?? '#8a8a8a'}
                 contourEnabled={contourEnabled ?? false} contourLevels={contourLevels ?? 8} contourLineColor={contourLineColor ?? '#1a2b1a'} contourBgColor={contourBgColor ?? '#efe9d8'} contourFill={contourFill ?? 40}
+                lowPolyEnabled={lowPolyEnabled ?? false} lowPolyPoints={lowPolyPoints ?? 450} lowPolyEdgeBias={lowPolyEdgeBias ?? 60} lowPolyShowEdges={lowPolyShowEdges ?? false} lowPolyEdgeColor={lowPolyEdgeColor ?? '#000000'} lowPolyStrength={lowPolyStrength ?? 100}
                 kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
@@ -3043,7 +3188,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 style={{ filter: cssFilter, transform: `scaleX(${imageFlipH ? -1 : 1}) scaleY(${imageFlipV ? -1 : 1})` }} />
             ) : null}
 
-            {/* Tint / duotone colour overlay */}
+            {/* Tint / duotone color overlay */}
             {(imageFilter === 'tint') && (
               <div className="absolute inset-0 mix-blend-overlay" style={{ backgroundColor: tintColor }} />
             )}

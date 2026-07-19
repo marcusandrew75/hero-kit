@@ -67,7 +67,7 @@ const ThumbHoverPreview: React.FC<{ hover: ThumbHover | null }> = ({ hover }) =>
   );
 };
 
-/** Light-themed horizontal range slider with accent-coloured fill track + LCD readout. */
+/** Light-themed horizontal range slider with accent-colored fill track + LCD readout. */
 const HwSlider: React.FC<{
   value: number; min: number; max: number; step?: number;
   onChange: (v: number) => void; decimals?: number; unit?: string;
@@ -205,6 +205,43 @@ const EffectSection: React.FC<{
     {enabled && children && (
       <div className="pt-4 pb-3 space-y-4">{children}</div>
     )}
+  </div>
+);
+
+/** Collapsible family band grouping several EffectSections. Header is a full-
+    width tappable row (caret + label) that shows a glowing active-count LED
+    when any child effect is switched on — so a collapsed group still tells you
+    it holds active effects. Matches LayersSection's caret-collapse idiom. */
+const EffectGroup: React.FC<{
+  label: string;
+  activeCount: number;
+  open: boolean;
+  onToggle: () => void;
+  children?: React.ReactNode;
+}> = ({ label, activeCount, open, onToggle, children }) => (
+  <div>
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 py-2.5"
+      style={{
+        borderBottom: `1px solid ${T.borderDk}`,
+        boxShadow: `0 1px 0 rgba(255,255,255,0.75)`,
+      }}
+    >
+      <i className={`ph ${open ? 'ph-caret-up' : 'ph-caret-down'} text-sm shrink-0`} style={{ color: T.dim }} />
+      <span className={`text-[9px] ${open ? 'font-extrabold' : 'font-bold'} tracking-[0.11em] uppercase flex-1 text-left select-none whitespace-nowrap transition-all`} style={{ color: T.text }}>
+        {label}
+      </span>
+      {activeCount > 0 && (
+        <span className="flex items-center gap-1 shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full"
+            style={{ background: T.accent, boxShadow: `0 0 5px rgba(232,67,32,0.55), 0 0 2px ${T.accent}` }} />
+          <span className="leading-none"
+            style={{ fontFamily: '"Share Tech Mono", ui-monospace, monospace', fontSize: 10, color: T.dim }}>{activeCount}</span>
+        </span>
+      )}
+    </button>
+    {open && children && <div className="pt-3">{children}</div>}
   </div>
 );
 
@@ -983,7 +1020,7 @@ const LayersSection: React.FC<{
   );
 };
 
-// ─── Preset vibe colours ─────────────────────────────────────────────────────
+// ─── Preset vibe colors ─────────────────────────────────────────────────────
 // Each dot reflects what the preset actually does — grade tone, dominant effect.
 const PRESET_DOT: Record<string, string> = {
   'Analog Film':  '#b5700a', // vellichor amber — warm film grain
@@ -1269,6 +1306,10 @@ interface RightPanelProps {
 
 const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
+  // Effect-family group collapse — keyed open map, all collapsed on load.
+  // In-memory only (resets per session), like the other transient panel UI.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (id: string) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
   const [exporting, setExporting] = useState(false);
@@ -1526,7 +1567,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 <button key={preset.name} onClick={() => onChange(preset.state)}
                   className="relative text-left rounded-xl p-3 border transition-all pattern-btn"
                   style={{ background: T.panel, borderColor: T.border }}>
-                  {/* Vibe dot — top-right corner, colour signals what the preset does */}
+                  {/* Vibe dot — top-right corner, color signals what the preset does */}
                   {PRESET_DOT[preset.name] && (
                     <span
                       className="absolute"
@@ -1727,486 +1768,541 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         {/* ── Effects ────────────────────────────────────────────────────── */}
         <HardwarePanel label="Effects" number={7}>
 
-          {/* Image Glitch */}
-          <EffectSection label="Image Glitch" number={1} enabled={state.imageGlitchEnabled}
-            onToggle={v => set({ imageGlitchEnabled: v })}>
-            <PatternGrid
-              options={[{ id:'digital',label:'Digital' },{ id:'corrupt',label:'Corrupt' },{ id:'signal',label:'Signal' }]}
-              value={state.imageGlitchStyle ?? 'digital'}
-              onChange={v => set({ imageGlitchStyle: v as typeof state.imageGlitchStyle })}
-              columns={3}
-            />
-            <Row label="Intensity">
-              <HwSlider value={state.imageGlitchIntensity ?? 40} min={1} max={100}
-                onChange={v => set({ imageGlitchIntensity: v })} />
-            </Row>
-            <Row label="Shift">
-              <HwSlider value={state.imageGlitchShift ?? 30} min={1} max={150}
-                onChange={v => set({ imageGlitchShift: v })} />
-            </Row>
-            <Row label="RGB Split">
-              <HwSlider value={state.imageGlitchRgbSplit ?? 5} min={0} max={40}
-                onChange={v => set({ imageGlitchRgbSplit: v })} />
-            </Row>
-          </EffectSection>
+          {/* ── Color & Tone ─────────────────────────────────────────────── */}
+          <EffectGroup label="Color & Tone" open={!!openGroups.color} onToggle={() => toggleGroup('color')}
+            activeCount={[state.colorGradeEnabled, state.splitToneEnabled, state.gradientMapEnabled].filter(Boolean).length}>
 
-          {/* Motion Blur */}
-          <EffectSection label="Motion Blur" number={2} enabled={state.motionBlurEnabled}
-            onToggle={v => set({ motionBlurEnabled: v })}>
-            <HwSegment
-              options={[{ id:'horizontal',label:'↔ Horiz' },{ id:'vertical',label:'↕ Vert' },{ id:'zoom',label:'⊙ Zoom' }]}
-              value={state.motionBlurType ?? 'horizontal'}
-              onChange={v => set({ motionBlurType: v as typeof state.motionBlurType })}
-            />
-            <Row label="Strength">
-              <HwSlider value={state.motionBlurStrength ?? 20} min={2} max={80}
-                onChange={v => set({ motionBlurStrength: v })} />
-            </Row>
-          </EffectSection>
-
-          {/* Spot Blur */}
-          <EffectSection label="Spot Blur" number={3} enabled={state.spotBlurEnabled}
-            onToggle={v => set({ spotBlurEnabled: v })}>
-            <Row label="BG blur">
-              <HwSlider value={state.spotBlurRadius ?? 18} min={2} max={40}
-                onChange={v => set({ spotBlurRadius: v })} />
-            </Row>
-            <SpotBlurMap spots={state.blurSpots ?? []} onChange={spots => set({ blurSpots: spots })} />
-          </EffectSection>
-
-          {/* Halftone */}
-          <EffectSection label="Halftone" number={4} enabled={state.halftoneEnabled}
-            onToggle={v => set({ halftoneEnabled: v })}>
-            <div>
-              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Pattern</p>
-              <PatternGrid
-                options={[
-                  { id:'dot',label:'Dot' },{ id:'line',label:'Line' },{ id:'crosshatch',label:'Crosshatch' },
-                ]}
-                value={state.halftonePattern}
-                onChange={v => set({ halftonePattern: v as typeof state.halftonePattern })}
-                columns={3}
-              />
-            </div>
-            <Row label={state.halftonePattern === 'dot' ? 'Dot size' : 'Thickness'}>
-              <HwSlider value={state.halftoneDotSize} min={1} max={12} step={0.5} decimals={1}
-                onChange={v => set({ halftoneDotSize: v })} />
-            </Row>
-            <Row label="Spacing">
-              <HwSlider value={state.halftoneSpacing} min={3} max={30} step={0.5} decimals={1}
-                onChange={v => set({ halftoneSpacing: v })} />
-            </Row>
-            {state.halftonePattern !== 'dot' && (
-              <Row label="Angle">
-                {/* Screen angle — real CMYK separations stagger plates at 15/45/75°
-                    to avoid moiré. Crosshatch draws a second pass at angle+90°. */}
-                <HwSlider value={state.halftoneAngle} min={0} max={180}
-                  onChange={v => set({ halftoneAngle: v })} />
+            {/* Color Grade */}
+            <EffectSection label="Color Grade" number={1} enabled={state.colorGradeEnabled}
+              onToggle={v => set({ colorGradeEnabled: v })}>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { id: 'teal-orange',   label: 'Teal & Orange', chip: 'linear-gradient(135deg,#0d9488,#f97316)' },
+                  { id: 'golden-hour',   label: 'Golden Hour',   chip: 'linear-gradient(135deg,#f59e0b,#b45309)' },
+                  { id: 'arctic',        label: 'Arctic',        chip: 'linear-gradient(135deg,#bae6fd,#1e40af)' },
+                  { id: 'noir',          label: 'Noir',          chip: 'linear-gradient(135deg,#111,#555)' },
+                  { id: 'moody',         label: 'Moody',         chip: 'linear-gradient(135deg,#1e1b4b,#4c1d95)' },
+                  { id: 'vellichor',     label: 'Vellichor',     chip: 'linear-gradient(135deg,#92400e,#d97706)' },
+                  { id: 'polaroid',      label: 'Polaroid',      chip: 'linear-gradient(135deg,#fde68a,#fbbf24)' },
+                  { id: 'kodachrome',    label: 'Kodachrome',    chip: 'linear-gradient(135deg,#dc2626,#f97316)' },
+                  { id: 'cross-process', label: 'X-Process',     chip: 'linear-gradient(135deg,#16a34a,#ca8a04)' },
+                  { id: 'lomo',          label: 'Lomography',    chip: 'linear-gradient(135deg,#7c3aed,#db2777)' },
+                  { id: 'faded',         label: 'Faded',         chip: 'linear-gradient(135deg,#94a3b8,#cbd5e1)' },
+                  { id: 'vhs',           label: 'VHS',           chip: 'linear-gradient(135deg,#166534,#15803d)' },
+                ] as const).map(p => (
+                  <button key={p.id} onClick={() => set({ colorGradePreset: p.id })}
+                    className="relative rounded-lg overflow-hidden border transition-all"
+                    style={{
+                      height: 52,
+                      borderColor: state.colorGradePreset === p.id ? T.text : T.border,
+                      boxShadow: state.colorGradePreset === p.id ? `0 0 0 2px ${T.accent}` : 'none',
+                    }}>
+                    <div className="absolute inset-0" style={{ background: p.chip }} />
+                    <div className="absolute inset-0 flex items-end justify-center pb-1.5"
+                      style={{ background: state.colorGradePreset === p.id ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.35)' }}>
+                      <span className="text-[8px] font-bold text-white drop-shadow text-center leading-tight px-1">{p.label}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <Row label="Strength">
+                <HwSlider value={Math.round((state.colorGradeStrength ?? 1) * 100)} min={0} max={100}
+                  onChange={v => set({ colorGradeStrength: v / 100 })} />
               </Row>
-            )}
-            <Row label="Duotone">
-              {/* Flattens the photo to two flat inks — bgColor fills the whole
-                  frame, halftoneColor is stamped in as opaque dot coverage —
-                  instead of multiply-blending one ink over the source image. */}
-              <TactileToggle value={state.halftoneDuotoneEnabled ?? false} onChange={v => set({ halftoneDuotoneEnabled: v })} />
-            </Row>
-            {state.halftoneDuotoneEnabled && (
-              <Row label="Background">
-                <ColorSwatch value={state.halftoneBgColor ?? '#ebf2b5'} onChange={v => set({ halftoneBgColor: v })} />
+            </EffectSection>
+
+            {/* Split Tone */}
+            <EffectSection label="Split Tone" number={2} enabled={state.splitToneEnabled}
+              onToggle={v => set({ splitToneEnabled: v })}>
+              <Row label="Shadows">
+                <ColorSwatch value={state.splitToneShadowColor ?? '#1a237e'} onChange={v => set({ splitToneShadowColor: v })} />
               </Row>
-            )}
-            <Row label={state.halftoneDuotoneEnabled ? 'Ink' : 'Color'}>
-              <ColorSwatch value={state.halftoneColor} onChange={v => set({ halftoneColor: v })} />
-            </Row>
-            <Row label="Opacity">
-              <HwSlider value={Math.round((state.halftoneOpacity ?? 1) * 100)} min={0} max={100}
-                onChange={v => set({ halftoneOpacity: v / 100 })} />
-            </Row>
-            <Row label="Invert">
-              <TactileToggle value={state.halftoneInvert} onChange={v => set({ halftoneInvert: v })} />
-            </Row>
-          </EffectSection>
+              <Row label="Highlights">
+                <ColorSwatch value={state.splitToneHighlightColor ?? '#ff6d00'} onChange={v => set({ splitToneHighlightColor: v })} />
+              </Row>
+              <Row label="Strength">
+                <HwSlider value={state.splitToneStrength ?? 60} min={1} max={100}
+                  onChange={v => set({ splitToneStrength: v })} />
+              </Row>
+              <Row label="Balance">
+                <HwSlider value={(state.splitToneBalance ?? 0) + 50} min={0} max={100}
+                  onChange={v => set({ splitToneBalance: v - 50 })} />
+              </Row>
+            </EffectSection>
 
-          {/* Color Grade */}
-          <EffectSection label="Color Grade" number={5} enabled={state.colorGradeEnabled}
-            onToggle={v => set({ colorGradeEnabled: v })}>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([
-                { id: 'teal-orange',   label: 'Teal & Orange', chip: 'linear-gradient(135deg,#0d9488,#f97316)' },
-                { id: 'golden-hour',   label: 'Golden Hour',   chip: 'linear-gradient(135deg,#f59e0b,#b45309)' },
-                { id: 'arctic',        label: 'Arctic',        chip: 'linear-gradient(135deg,#bae6fd,#1e40af)' },
-                { id: 'noir',          label: 'Noir',          chip: 'linear-gradient(135deg,#111,#555)' },
-                { id: 'moody',         label: 'Moody',         chip: 'linear-gradient(135deg,#1e1b4b,#4c1d95)' },
-                { id: 'vellichor',     label: 'Vellichor',     chip: 'linear-gradient(135deg,#92400e,#d97706)' },
-                { id: 'polaroid',      label: 'Polaroid',      chip: 'linear-gradient(135deg,#fde68a,#fbbf24)' },
-                { id: 'kodachrome',    label: 'Kodachrome',    chip: 'linear-gradient(135deg,#dc2626,#f97316)' },
-                { id: 'cross-process', label: 'X-Process',     chip: 'linear-gradient(135deg,#16a34a,#ca8a04)' },
-                { id: 'lomo',          label: 'Lomography',    chip: 'linear-gradient(135deg,#7c3aed,#db2777)' },
-                { id: 'faded',         label: 'Faded',         chip: 'linear-gradient(135deg,#94a3b8,#cbd5e1)' },
-                { id: 'vhs',           label: 'VHS',           chip: 'linear-gradient(135deg,#166534,#15803d)' },
-              ] as const).map(p => (
-                <button key={p.id} onClick={() => set({ colorGradePreset: p.id })}
-                  className="relative rounded-lg overflow-hidden border transition-all"
-                  style={{
-                    height: 52,
-                    borderColor: state.colorGradePreset === p.id ? T.text : T.border,
-                    boxShadow: state.colorGradePreset === p.id ? `0 0 0 2px ${T.accent}` : 'none',
-                  }}>
-                  <div className="absolute inset-0" style={{ background: p.chip }} />
-                  <div className="absolute inset-0 flex items-end justify-center pb-1.5"
-                    style={{ background: state.colorGradePreset === p.id ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.35)' }}>
-                    <span className="text-[8px] font-bold text-white drop-shadow text-center leading-tight px-1">{p.label}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-            <Row label="Strength">
-              <HwSlider value={Math.round((state.colorGradeStrength ?? 1) * 100)} min={0} max={100}
-                onChange={v => set({ colorGradeStrength: v / 100 })} />
-            </Row>
-          </EffectSection>
+            {/* Gradient Map */}
+            <EffectSection label="Gradient Map" number={3} enabled={state.gradientMapEnabled}
+              onToggle={v => set({ gradientMapEnabled: v })}>
+              <div className="grid grid-cols-2 gap-1">
+                {GRADIENT_MAP_SWATCHES.map(s => (
+                  <button key={s.id} onClick={() => set({ gradientMapPreset: s.id })}
+                    title={s.label}
+                    className="h-7 rounded-md relative overflow-hidden transition-all"
+                    style={{
+                      background: s.css,
+                      boxShadow: state.gradientMapPreset === s.id
+                        ? `0 0 0 2px ${T.text}` : `inset 0 0 0 1px ${T.border}`,
+                    }}>
+                    <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold uppercase tracking-wide"
+                      style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.75)' }}>{s.label}</span>
+                  </button>
+                ))}
+              </div>
+              <Row label="Strength">
+                <HwSlider value={state.gradientMapStrength} min={0} max={100}
+                  onChange={v => set({ gradientMapStrength: v })} />
+              </Row>
+              <Row label="Invert">
+                {/* Flip which end of the ramp maps to shadows vs highlights */}
+                <HwSegment options={[{ id: 'off', label: 'Normal' }, { id: 'on', label: 'Invert' }]}
+                  value={state.gradientMapInvert ? 'on' : 'off'}
+                  onChange={v => set({ gradientMapInvert: v === 'on' })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Recolors the image by brightness through a preset ramp — thermal camera, x-ray, infrared, acid neon. Strength blends it back over the original.
+              </p>
+            </EffectSection>
+          </EffectGroup>
 
-          {/* Dispersion */}
-          <EffectSection label="Dispersion" number={6} enabled={state.dispersionEnabled}
-            onToggle={v => set({ dispersionEnabled: v })}>
-            <Row label="Threshold">
-              <HwSlider value={state.dispersionThreshold ?? 80} min={1} max={240}
-                onChange={v => set({ dispersionThreshold: v })} />
-            </Row>
-            <Row label="Strength">
-              <HwSlider value={state.dispersionStrength ?? 60} min={5} max={180}
-                onChange={v => set({ dispersionStrength: v })} />
-            </Row>
-            <Row label="Spread">
-              <HwSlider value={Math.round((state.dispersionSpread ?? 0.6) * 100)} min={0} max={100}
-                onChange={v => set({ dispersionSpread: v / 100 })} />
-            </Row>
-            <div>
-              <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Direction</p>
-              <PatternGrid
-                options={[
-                  { id:'up',label:'Up' },{ id:'right',label:'Right' },{ id:'down',label:'Down' },
-                  { id:'radial',label:'Out' },{ id:'chaos',label:'Chaos' },
-                ]}
-                value={state.dispersionDirection ?? 'up'}
-                onChange={v => set({ dispersionDirection: v as typeof state.dispersionDirection })}
-                columns={5}
-              />
-            </div>
-          </EffectSection>
+          {/* ── Print & Halftone ──────────────────────────────────────────── */}
+          <EffectGroup label="Print & Halftone" open={!!openGroups.print} onToggle={() => toggleGroup('print')}
+            activeCount={[state.halftoneEnabled, state.risoEnabled, state.cmykSeparationEnabled, state.silkscreenEnabled, state.postcardEnabled].filter(Boolean).length}>
 
-          {/* RGB Channel Smear */}
-          <EffectSection label="RGB Channel Smear" number={7} enabled={state.channelSmearEnabled}
-            onToggle={v => set({ channelSmearEnabled: v })}>
-            <Row label="Threshold">
-              <HwSlider value={state.channelSmearThreshold ?? 80} min={0} max={240}
-                onChange={v => set({ channelSmearThreshold: v })} />
-            </Row>
-            {([
-              { key: 'channelSmearRDir' as const, label: 'R', color: '#e84320' },
-              { key: 'channelSmearGDir' as const, label: 'G', color: '#16a34a' },
-              { key: 'channelSmearBDir' as const, label: 'B', color: '#2563eb' },
-            ]).map(({ key, label, color }) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="text-[12px] font-bold w-4 shrink-0 tabular-nums" style={{ color }}>{label}</span>
+            {/* Halftone */}
+            <EffectSection label="Halftone" number={1} enabled={state.halftoneEnabled}
+              onToggle={v => set({ halftoneEnabled: v })}>
+              <div>
+                <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Pattern</p>
                 <PatternGrid
-                  options={[{ id:'up',label:'↑' },{ id:'down',label:'↓' },{ id:'left',label:'←' },{ id:'right',label:'→' }]}
-                  value={state[key] ?? (label === 'R' ? 'up' : label === 'G' ? 'left' : 'right')}
-                  onChange={v => set({ [key]: v } as any)}
-                  columns={4}
+                  options={[
+                    { id:'dot',label:'Dot' },{ id:'line',label:'Line' },{ id:'crosshatch',label:'Crosshatch' },
+                  ]}
+                  value={state.halftonePattern}
+                  onChange={v => set({ halftonePattern: v as typeof state.halftonePattern })}
+                  columns={3}
                 />
               </div>
-            ))}
-          </EffectSection>
-
-          {/* Displacement Warp */}
-          <EffectSection label="Displacement Warp" number={8} enabled={state.warpEnabled}
-            onToggle={v => set({ warpEnabled: v })}>
-            <HwSegment
-              options={[{ id:'warp',label:'Warp' },{ id:'swirl',label:'Swirl' },{ id:'flow',label:'Flow' }]}
-              value={state.warpStyle ?? 'warp'}
-              onChange={v => set({ warpStyle: v as typeof state.warpStyle })}
-            />
-            <Row label="Strength">
-              <HwSlider value={state.warpStrength ?? 30} min={2} max={120}
-                onChange={v => set({ warpStrength: v })} />
-            </Row>
-            <Row label="Scale">
-              <HwSlider value={state.warpScale ?? 3} min={0.5} max={12} step={0.5} decimals={1}
-                onChange={v => set({ warpScale: v })} />
-            </Row>
-            <Row label="Detail">
-              <HwSlider value={state.warpOctaves ?? 3} min={1} max={5}
-                onChange={v => set({ warpOctaves: v })} />
-            </Row>
-          </EffectSection>
-
-          {/* Edge Glow */}
-          <EffectSection label="Edge Glow" number={9} enabled={state.edgeGlowEnabled}
-            onToggle={v => set({ edgeGlowEnabled: v })}>
-            <Row label="Color">
-              <ColorSwatch value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} />
-            </Row>
-            <Row label="Intensity">
-              <HwSlider value={state.edgeGlowIntensity ?? 65} min={10} max={100}
-                onChange={v => set({ edgeGlowIntensity: v })} />
-            </Row>
-            <Row label="Bloom">
-              <HwSlider value={state.edgeGlowBloom ?? 8} min={1} max={30}
-                onChange={v => set({ edgeGlowBloom: v })} />
-            </Row>
-            <Row label="Darken">
-              <HwSlider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90}
-                onChange={v => set({ edgeGlowDarken: v / 100 })} />
-            </Row>
-          </EffectSection>
-
-          {/* Split Tone */}
-          <EffectSection label="Split Tone" number={10} enabled={state.splitToneEnabled}
-            onToggle={v => set({ splitToneEnabled: v })}>
-            <Row label="Shadows">
-              <ColorSwatch value={state.splitToneShadowColor ?? '#1a237e'} onChange={v => set({ splitToneShadowColor: v })} />
-            </Row>
-            <Row label="Highlights">
-              <ColorSwatch value={state.splitToneHighlightColor ?? '#ff6d00'} onChange={v => set({ splitToneHighlightColor: v })} />
-            </Row>
-            <Row label="Strength">
-              <HwSlider value={state.splitToneStrength ?? 60} min={1} max={100}
-                onChange={v => set({ splitToneStrength: v })} />
-            </Row>
-            <Row label="Balance">
-              <HwSlider value={(state.splitToneBalance ?? 0) + 50} min={0} max={100}
-                onChange={v => set({ splitToneBalance: v - 50 })} />
-            </Row>
-          </EffectSection>
-
-          {/* Pixel Sort */}
-          <EffectSection label="Pixel Sort" number={11} enabled={state.pixelSortEnabled}
-            onToggle={v => set({ pixelSortEnabled: v })}>
-            <Row label="Threshold">
-              <HwSlider value={state.pixelSortThreshold ?? 128} min={0} max={255}
-                onChange={v => set({ pixelSortThreshold: v })} />
-            </Row>
-            <HwSegment
-              options={[{ id:'up',label:'Up' },{ id:'down',label:'Down' },{ id:'left',label:'Left' },{ id:'right',label:'Right' }]}
-              value={state.pixelSortDirection ?? 'up'}
-              onChange={v => set({ pixelSortDirection: v as typeof state.pixelSortDirection })}
-            />
-            <HwSegment
-              options={[{ id:'brightness',label:'Luma' },{ id:'hue',label:'Hue' },{ id:'saturation',label:'Sat' }]}
-              value={state.pixelSortMode ?? 'brightness'}
-              onChange={v => set({ pixelSortMode: v as typeof state.pixelSortMode })}
-            />
-          </EffectSection>
-
-          {/* Riso Print */}
-          <EffectSection label="Riso Print" number={12} enabled={state.risoEnabled}
-            onToggle={v => set({ risoEnabled: v })}>
-            <Row label="Ink 1">
-              <ColorSwatch value={state.risoColor1} onChange={v => set({ risoColor1: v })} />
-            </Row>
-            <Row label="Ink 2">
-              <ColorSwatch value={state.risoColor2} onChange={v => set({ risoColor2: v })} />
-            </Row>
-            <Row label="Dot size">
-              <HwSlider value={state.risoScale} min={1} max={16}
-                onChange={v => set({ risoScale: v })} />
-            </Row>
-            <Row label="Misreg.">
-              {/* Misregistration — how far the two ink layers are offset from
-                  each other, mimicking imperfect real riso master alignment */}
-              <HwSlider value={state.risoOffset} min={0} max={10}
-                onChange={v => set({ risoOffset: v })} />
-            </Row>
-            <Row label="Grain">
-              <HwSlider value={state.risoGrain} min={0} max={100}
-                onChange={v => set({ risoGrain: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Two ink plates, each independently dithered and slightly offset — the imperfect-registration look of real Risograph duplicator prints.
-            </p>
-          </EffectSection>
-
-          {/* CMYK Separation */}
-          <EffectSection label="CMYK Separation" number={13} enabled={state.cmykSeparationEnabled}
-            onToggle={v => set({ cmykSeparationEnabled: v })}>
-            <Row label="Dot size">
-              <HwSlider value={state.cmykDotSize} min={1} max={12} step={0.5} decimals={1}
-                onChange={v => set({ cmykDotSize: v })} />
-            </Row>
-            <Row label="Spacing">
-              <HwSlider value={state.cmykSpacing} min={3} max={30} step={0.5} decimals={1}
-                onChange={v => set({ cmykSpacing: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Four halftone ink plates at the classic press screen angles (C 15° · M 75° · Y 0° · K 45°) — staggered to avoid moiré, exactly like an offset-press separation.
-            </p>
-          </EffectSection>
-
-          {/* Silkscreen */}
-          <EffectSection label="Silkscreen" number={14} enabled={state.silkscreenEnabled}
-            onToggle={v => set({ silkscreenEnabled: v })}>
-            <Row label="Paper">
-              <ColorSwatch value={state.silkscreenPaperColor} onChange={v => set({ silkscreenPaperColor: v })} />
-            </Row>
-            <Row label="Ink 1">
-              <ColorSwatch value={state.silkscreenInk1} onChange={v => set({ silkscreenInk1: v })} />
-            </Row>
-            <Row label="Ink 2">
-              <ColorSwatch value={state.silkscreenInk2} onChange={v => set({ silkscreenInk2: v })} />
-            </Row>
-            <Row label="Ink 3">
-              <ColorSwatch value={state.silkscreenInk3} onChange={v => set({ silkscreenInk3: v })} />
-            </Row>
-            <Row label="Key plate">
-              {/* Luminance threshold below which pixels print solid black —
-                  carves the silhouettes/linework out of the image */}
-              <HwSlider value={state.silkscreenKeyThreshold} min={0} max={100}
-                onChange={v => set({ silkscreenKeyThreshold: v })} />
-            </Row>
-            <Row label="Stipple">
-              <HwSlider value={state.silkscreenStipple} min={0} max={100}
-                onChange={v => set({ silkscreenStipple: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Flat spot-ink posterization — paper ground, three inks and a black key plate, with stipple breaking up the tonal boundaries. The vintage poster / book-plate / comic look.
-            </p>
-          </EffectSection>
-
-          {/* Postcard */}
-          <EffectSection label="Postcard" number={15} enabled={state.postcardEnabled}
-            onToggle={v => set({ postcardEnabled: v })}>
-            <Row label="Saturation">
-              <HwSlider value={state.postcardSaturation} min={0} max={100}
-                onChange={v => set({ postcardSaturation: v })} />
-            </Row>
-            <Row label="Warmth">
-              <HwSlider value={state.postcardWarmth} min={-50} max={50}
-                onChange={v => set({ postcardWarmth: v })} />
-            </Row>
-            <Row label="Palette">
-              {/* Per-channel quantization levels — fewer = harder retro clamp */}
-              <HwSlider value={state.postcardLevels} min={2} max={8}
-                onChange={v => set({ postcardLevels: v })} />
-            </Row>
-            <Row label="Texture">
-              {/* Bayer cell size — 1 reads as linen-postcard weave, larger
-                  becomes visible 90s-videogame dither */}
-              <HwSlider value={state.postcardScale} min={1} max={8}
-                onChange={v => set({ postcardScale: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Oversaturated limited-palette color with a fine ordered texture — vintage linen travel postcard at fine Texture, 90s videogame at chunky.
-            </p>
-          </EffectSection>
-
-          {/* Gradient Map */}
-          <EffectSection label="Gradient Map" number={16} enabled={state.gradientMapEnabled}
-            onToggle={v => set({ gradientMapEnabled: v })}>
-            <div className="grid grid-cols-2 gap-1">
-              {GRADIENT_MAP_SWATCHES.map(s => (
-                <button key={s.id} onClick={() => set({ gradientMapPreset: s.id })}
-                  title={s.label}
-                  className="h-7 rounded-md relative overflow-hidden transition-all"
-                  style={{
-                    background: s.css,
-                    boxShadow: state.gradientMapPreset === s.id
-                      ? `0 0 0 2px ${T.text}` : `inset 0 0 0 1px ${T.border}`,
-                  }}>
-                  <span className="absolute inset-0 flex items-center justify-center text-[9px] font-bold uppercase tracking-wide"
-                    style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.75)' }}>{s.label}</span>
-                </button>
-              ))}
-            </div>
-            <Row label="Strength">
-              <HwSlider value={state.gradientMapStrength} min={0} max={100}
-                onChange={v => set({ gradientMapStrength: v })} />
-            </Row>
-            <Row label="Invert">
-              {/* Flip which end of the ramp maps to shadows vs highlights */}
-              <HwSegment options={[{ id: 'off', label: 'Normal' }, { id: 'on', label: 'Invert' }]}
-                value={state.gradientMapInvert ? 'on' : 'off'}
-                onChange={v => set({ gradientMapInvert: v === 'on' })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Recolours the image by brightness through a preset ramp — thermal camera, x-ray, infrared, acid neon. Strength blends it back over the original.
-            </p>
-          </EffectSection>
-
-          {/* Relief / Emboss-3D */}
-          <EffectSection label="Relief" number={17} enabled={state.reliefEnabled}
-            onToggle={v => set({ reliefEnabled: v })}>
-            <Row label="Light angle">
-              <HwSlider value={state.reliefAngle} min={0} max={360} unit="°"
-                onChange={v => set({ reliefAngle: v })} />
-            </Row>
-            <Row label="Depth">
-              <HwSlider value={state.reliefDepth} min={0} max={100}
-                onChange={v => set({ reliefDepth: v })} />
-            </Row>
-            <Row label="Colorize">
-              {/* 0 = pure lit material (metal/stone), 100 = original colours re-lit */}
-              <HwSlider value={state.reliefColorize} min={0} max={100}
-                onChange={v => set({ reliefColorize: v })} />
-            </Row>
-            <Row label="Material">
-              <ColorSwatch value={state.reliefTint} onChange={v => set({ reliefTint: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Lights the image like a carved surface — brightness becomes height, lit from the chosen angle. Colorize sweeps from hammered metal/stone toward the original colours re-lit.
-            </p>
-          </EffectSection>
-
-          {/* Contour / Topographic */}
-          <EffectSection label="Contour" number={18} enabled={state.contourEnabled}
-            onToggle={v => set({ contourEnabled: v })}>
-            <Row label="Levels">
-              {/* Number of elevation bands — more = tighter contour spacing */}
-              <HwSlider value={state.contourLevels} min={3} max={16}
-                onChange={v => set({ contourLevels: v })} />
-            </Row>
-            <Row label="Line">
-              <ColorSwatch value={state.contourLineColor} onChange={v => set({ contourLineColor: v })} />
-            </Row>
-            <Row label="Ground">
-              <ColorSwatch value={state.contourBgColor} onChange={v => set({ contourBgColor: v })} />
-            </Row>
-            <Row label="Fill">
-              {/* 0 = contour lines over the photo, 100 = flat tinted elevation map */}
-              <HwSlider value={state.contourFill} min={0} max={100}
-                onChange={v => set({ contourFill: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Slices brightness into elevation bands and draws the contour lines between them. Fill sweeps from lines over the photo to a clean tinted topographic map.
-            </p>
-          </EffectSection>
-
-          {/* Kaleidoscope */}
-          <EffectSection label="Kaleidoscope" number={19} enabled={state.kaleidoscopeEnabled}
-            onToggle={v => set({ kaleidoscopeEnabled: v })}>
-            <Row label="Mode">
-              <HwSegment options={[{ id: 'radial', label: 'Radial' }, { id: 'mirror', label: 'Mirror' }]}
-                value={state.kaleidoscopeMode}
-                onChange={v => set({ kaleidoscopeMode: v as 'radial' | 'mirror' })} />
-            </Row>
-            {state.kaleidoscopeMode === 'radial' && (
-              <Row label="Segments">
-                <HwSlider value={state.kaleidoscopeSegments} min={2} max={16}
-                  onChange={v => set({ kaleidoscopeSegments: v })} />
+              <Row label={state.halftonePattern === 'dot' ? 'Dot size' : 'Thickness'}>
+                <HwSlider value={state.halftoneDotSize} min={1} max={12} step={0.5} decimals={1}
+                  onChange={v => set({ halftoneDotSize: v })} />
               </Row>
-            )}
-            <Row label="Rotation">
-              <HwSlider value={state.kaleidoscopeAngle} min={0} max={360} unit="°"
-                onChange={v => set({ kaleidoscopeAngle: v })} />
-            </Row>
-            <Row label="Zoom">
-              <HwSlider value={state.kaleidoscopeZoom} min={0.5} max={2} step={0.1} decimals={1} unit="×"
-                onChange={v => set({ kaleidoscopeZoom: v })} />
-            </Row>
-            <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
-              Folds the image into mirrored wedges around the centre — a mandala/emblem from any photo. Rotation spins the source slice; Zoom controls how much is pulled in.
-            </p>
-          </EffectSection>
+              <Row label="Spacing">
+                <HwSlider value={state.halftoneSpacing} min={3} max={30} step={0.5} decimals={1}
+                  onChange={v => set({ halftoneSpacing: v })} />
+              </Row>
+              {state.halftonePattern !== 'dot' && (
+                <Row label="Angle">
+                  {/* Screen angle — real CMYK separations stagger plates at 15/45/75°
+                      to avoid moiré. Crosshatch draws a second pass at angle+90°. */}
+                  <HwSlider value={state.halftoneAngle} min={0} max={180}
+                    onChange={v => set({ halftoneAngle: v })} />
+                </Row>
+              )}
+              <Row label="Duotone">
+                {/* Flattens the photo to two flat inks — bgColor fills the whole
+                    frame, halftoneColor is stamped in as opaque dot coverage —
+                    instead of multiply-blending one ink over the source image. */}
+                <TactileToggle value={state.halftoneDuotoneEnabled ?? false} onChange={v => set({ halftoneDuotoneEnabled: v })} />
+              </Row>
+              {state.halftoneDuotoneEnabled && (
+                <Row label="Background">
+                  <ColorSwatch value={state.halftoneBgColor ?? '#ebf2b5'} onChange={v => set({ halftoneBgColor: v })} />
+                </Row>
+              )}
+              <Row label={state.halftoneDuotoneEnabled ? 'Ink' : 'Color'}>
+                <ColorSwatch value={state.halftoneColor} onChange={v => set({ halftoneColor: v })} />
+              </Row>
+              <Row label="Opacity">
+                <HwSlider value={Math.round((state.halftoneOpacity ?? 1) * 100)} min={0} max={100}
+                  onChange={v => set({ halftoneOpacity: v / 100 })} />
+              </Row>
+              <Row label="Invert">
+                <TactileToggle value={state.halftoneInvert} onChange={v => set({ halftoneInvert: v })} />
+              </Row>
+            </EffectSection>
+
+            {/* Riso Print */}
+            <EffectSection label="Riso Print" number={2} enabled={state.risoEnabled}
+              onToggle={v => set({ risoEnabled: v })}>
+              <Row label="Ink 1">
+                <ColorSwatch value={state.risoColor1} onChange={v => set({ risoColor1: v })} />
+              </Row>
+              <Row label="Ink 2">
+                <ColorSwatch value={state.risoColor2} onChange={v => set({ risoColor2: v })} />
+              </Row>
+              <Row label="Dot size">
+                <HwSlider value={state.risoScale} min={1} max={16}
+                  onChange={v => set({ risoScale: v })} />
+              </Row>
+              <Row label="Misreg.">
+                {/* Misregistration — how far the two ink layers are offset from
+                    each other, mimicking imperfect real riso master alignment */}
+                <HwSlider value={state.risoOffset} min={0} max={10}
+                  onChange={v => set({ risoOffset: v })} />
+              </Row>
+              <Row label="Grain">
+                <HwSlider value={state.risoGrain} min={0} max={100}
+                  onChange={v => set({ risoGrain: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Two ink plates, each independently dithered and slightly offset — the imperfect-registration look of real Risograph duplicator prints.
+              </p>
+            </EffectSection>
+
+            {/* CMYK Separation */}
+            <EffectSection label="CMYK Separation" number={3} enabled={state.cmykSeparationEnabled}
+              onToggle={v => set({ cmykSeparationEnabled: v })}>
+              <Row label="Dot size">
+                <HwSlider value={state.cmykDotSize} min={1} max={12} step={0.5} decimals={1}
+                  onChange={v => set({ cmykDotSize: v })} />
+              </Row>
+              <Row label="Spacing">
+                <HwSlider value={state.cmykSpacing} min={3} max={30} step={0.5} decimals={1}
+                  onChange={v => set({ cmykSpacing: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Four halftone ink plates at the classic press screen angles (C 15° · M 75° · Y 0° · K 45°) — staggered to avoid moiré, exactly like an offset-press separation.
+              </p>
+            </EffectSection>
+
+            {/* Silkscreen */}
+            <EffectSection label="Silkscreen" number={4} enabled={state.silkscreenEnabled}
+              onToggle={v => set({ silkscreenEnabled: v })}>
+              <Row label="Paper">
+                <ColorSwatch value={state.silkscreenPaperColor} onChange={v => set({ silkscreenPaperColor: v })} />
+              </Row>
+              <Row label="Ink 1">
+                <ColorSwatch value={state.silkscreenInk1} onChange={v => set({ silkscreenInk1: v })} />
+              </Row>
+              <Row label="Ink 2">
+                <ColorSwatch value={state.silkscreenInk2} onChange={v => set({ silkscreenInk2: v })} />
+              </Row>
+              <Row label="Ink 3">
+                <ColorSwatch value={state.silkscreenInk3} onChange={v => set({ silkscreenInk3: v })} />
+              </Row>
+              <Row label="Key plate">
+                {/* Luminance threshold below which pixels print solid black —
+                    carves the silhouettes/linework out of the image */}
+                <HwSlider value={state.silkscreenKeyThreshold} min={0} max={100}
+                  onChange={v => set({ silkscreenKeyThreshold: v })} />
+              </Row>
+              <Row label="Stipple">
+                <HwSlider value={state.silkscreenStipple} min={0} max={100}
+                  onChange={v => set({ silkscreenStipple: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Flat spot-ink posterization — paper ground, three inks and a black key plate, with stipple breaking up the tonal boundaries. The vintage poster / book-plate / comic look.
+              </p>
+            </EffectSection>
+
+            {/* Postcard */}
+            <EffectSection label="Postcard" number={5} enabled={state.postcardEnabled}
+              onToggle={v => set({ postcardEnabled: v })}>
+              <Row label="Saturation">
+                <HwSlider value={state.postcardSaturation} min={0} max={100}
+                  onChange={v => set({ postcardSaturation: v })} />
+              </Row>
+              <Row label="Warmth">
+                <HwSlider value={state.postcardWarmth} min={-50} max={50}
+                  onChange={v => set({ postcardWarmth: v })} />
+              </Row>
+              <Row label="Palette">
+                {/* Per-channel quantization levels — fewer = harder retro clamp */}
+                <HwSlider value={state.postcardLevels} min={2} max={8}
+                  onChange={v => set({ postcardLevels: v })} />
+              </Row>
+              <Row label="Texture">
+                {/* Bayer cell size — 1 reads as linen-postcard weave, larger
+                    becomes visible 90s-videogame dither */}
+                <HwSlider value={state.postcardScale} min={1} max={8}
+                  onChange={v => set({ postcardScale: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Oversaturated limited-palette color with a fine ordered texture — vintage linen travel postcard at fine Texture, 90s videogame at chunky.
+              </p>
+            </EffectSection>
+          </EffectGroup>
+
+          {/* ── Distort & Glitch ──────────────────────────────────────────── */}
+          <EffectGroup label="Distort & Glitch" open={!!openGroups.distort} onToggle={() => toggleGroup('distort')}
+            activeCount={[state.imageGlitchEnabled, state.dispersionEnabled, state.channelSmearEnabled, state.warpEnabled, state.pixelSortEnabled].filter(Boolean).length}>
+
+            {/* Image Glitch */}
+            <EffectSection label="Image Glitch" number={1} enabled={state.imageGlitchEnabled}
+              onToggle={v => set({ imageGlitchEnabled: v })}>
+              <PatternGrid
+                options={[{ id:'digital',label:'Digital' },{ id:'corrupt',label:'Corrupt' },{ id:'signal',label:'Signal' }]}
+                value={state.imageGlitchStyle ?? 'digital'}
+                onChange={v => set({ imageGlitchStyle: v as typeof state.imageGlitchStyle })}
+                columns={3}
+              />
+              <Row label="Intensity">
+                <HwSlider value={state.imageGlitchIntensity ?? 40} min={1} max={100}
+                  onChange={v => set({ imageGlitchIntensity: v })} />
+              </Row>
+              <Row label="Shift">
+                <HwSlider value={state.imageGlitchShift ?? 30} min={1} max={150}
+                  onChange={v => set({ imageGlitchShift: v })} />
+              </Row>
+              <Row label="RGB Split">
+                <HwSlider value={state.imageGlitchRgbSplit ?? 5} min={0} max={40}
+                  onChange={v => set({ imageGlitchRgbSplit: v })} />
+              </Row>
+            </EffectSection>
+
+            {/* Dispersion */}
+            <EffectSection label="Dispersion" number={2} enabled={state.dispersionEnabled}
+              onToggle={v => set({ dispersionEnabled: v })}>
+              <Row label="Threshold">
+                <HwSlider value={state.dispersionThreshold ?? 80} min={1} max={240}
+                  onChange={v => set({ dispersionThreshold: v })} />
+              </Row>
+              <Row label="Strength">
+                <HwSlider value={state.dispersionStrength ?? 60} min={5} max={180}
+                  onChange={v => set({ dispersionStrength: v })} />
+              </Row>
+              <Row label="Spread">
+                <HwSlider value={Math.round((state.dispersionSpread ?? 0.6) * 100)} min={0} max={100}
+                  onChange={v => set({ dispersionSpread: v / 100 })} />
+              </Row>
+              <div>
+                <p className="text-[10px] font-semibold mb-2" style={{ color: T.muted }}>Direction</p>
+                <PatternGrid
+                  options={[
+                    { id:'up',label:'Up' },{ id:'right',label:'Right' },{ id:'down',label:'Down' },
+                    { id:'radial',label:'Out' },{ id:'chaos',label:'Chaos' },
+                  ]}
+                  value={state.dispersionDirection ?? 'up'}
+                  onChange={v => set({ dispersionDirection: v as typeof state.dispersionDirection })}
+                  columns={5}
+                />
+              </div>
+            </EffectSection>
+
+            {/* RGB Channel Smear */}
+            <EffectSection label="RGB Channel Smear" number={3} enabled={state.channelSmearEnabled}
+              onToggle={v => set({ channelSmearEnabled: v })}>
+              <Row label="Threshold">
+                <HwSlider value={state.channelSmearThreshold ?? 80} min={0} max={240}
+                  onChange={v => set({ channelSmearThreshold: v })} />
+              </Row>
+              {([
+                { key: 'channelSmearRDir' as const, label: 'R', color: '#e84320' },
+                { key: 'channelSmearGDir' as const, label: 'G', color: '#16a34a' },
+                { key: 'channelSmearBDir' as const, label: 'B', color: '#2563eb' },
+              ]).map(({ key, label, color }) => (
+                <div key={key} className="flex items-center gap-3">
+                  <span className="text-[12px] font-bold w-4 shrink-0 tabular-nums" style={{ color }}>{label}</span>
+                  <PatternGrid
+                    options={[{ id:'up',label:'↑' },{ id:'down',label:'↓' },{ id:'left',label:'←' },{ id:'right',label:'→' }]}
+                    value={state[key] ?? (label === 'R' ? 'up' : label === 'G' ? 'left' : 'right')}
+                    onChange={v => set({ [key]: v } as any)}
+                    columns={4}
+                  />
+                </div>
+              ))}
+            </EffectSection>
+
+            {/* Displacement Warp */}
+            <EffectSection label="Displacement Warp" number={4} enabled={state.warpEnabled}
+              onToggle={v => set({ warpEnabled: v })}>
+              <HwSegment
+                options={[{ id:'warp',label:'Warp' },{ id:'swirl',label:'Swirl' },{ id:'flow',label:'Flow' }]}
+                value={state.warpStyle ?? 'warp'}
+                onChange={v => set({ warpStyle: v as typeof state.warpStyle })}
+              />
+              <Row label="Strength">
+                <HwSlider value={state.warpStrength ?? 30} min={2} max={120}
+                  onChange={v => set({ warpStrength: v })} />
+              </Row>
+              <Row label="Scale">
+                <HwSlider value={state.warpScale ?? 3} min={0.5} max={12} step={0.5} decimals={1}
+                  onChange={v => set({ warpScale: v })} />
+              </Row>
+              <Row label="Detail">
+                <HwSlider value={state.warpOctaves ?? 3} min={1} max={5}
+                  onChange={v => set({ warpOctaves: v })} />
+              </Row>
+            </EffectSection>
+
+            {/* Pixel Sort */}
+            <EffectSection label="Pixel Sort" number={5} enabled={state.pixelSortEnabled}
+              onToggle={v => set({ pixelSortEnabled: v })}>
+              <Row label="Threshold">
+                <HwSlider value={state.pixelSortThreshold ?? 128} min={0} max={255}
+                  onChange={v => set({ pixelSortThreshold: v })} />
+              </Row>
+              <HwSegment
+                options={[{ id:'up',label:'Up' },{ id:'down',label:'Down' },{ id:'left',label:'Left' },{ id:'right',label:'Right' }]}
+                value={state.pixelSortDirection ?? 'up'}
+                onChange={v => set({ pixelSortDirection: v as typeof state.pixelSortDirection })}
+              />
+              <HwSegment
+                options={[{ id:'brightness',label:'Luma' },{ id:'hue',label:'Hue' },{ id:'saturation',label:'Sat' }]}
+                value={state.pixelSortMode ?? 'brightness'}
+                onChange={v => set({ pixelSortMode: v as typeof state.pixelSortMode })}
+              />
+            </EffectSection>
+          </EffectGroup>
+
+          {/* ── Structure & Form ──────────────────────────────────────────── */}
+          <EffectGroup label="Structure & Form" open={!!openGroups.structure} onToggle={() => toggleGroup('structure')}
+            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.kaleidoscopeEnabled].filter(Boolean).length}>
+
+            {/* Relief / Emboss-3D */}
+            <EffectSection label="Relief" number={1} enabled={state.reliefEnabled}
+              onToggle={v => set({ reliefEnabled: v })}>
+              <Row label="Light angle">
+                <HwSlider value={state.reliefAngle} min={0} max={360} unit="°"
+                  onChange={v => set({ reliefAngle: v })} />
+              </Row>
+              <Row label="Depth">
+                <HwSlider value={state.reliefDepth} min={0} max={100}
+                  onChange={v => set({ reliefDepth: v })} />
+              </Row>
+              <Row label="Colorize">
+                {/* 0 = pure lit material (metal/stone), 100 = original colors re-lit */}
+                <HwSlider value={state.reliefColorize} min={0} max={100}
+                  onChange={v => set({ reliefColorize: v })} />
+              </Row>
+              <Row label="Material">
+                <ColorSwatch value={state.reliefTint} onChange={v => set({ reliefTint: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Lights the image like a carved surface — brightness becomes height, lit from the chosen angle. Colorize sweeps from hammered metal/stone toward the original colors re-lit.
+              </p>
+            </EffectSection>
+
+            {/* Contour / Topographic */}
+            <EffectSection label="Contour" number={2} enabled={state.contourEnabled}
+              onToggle={v => set({ contourEnabled: v })}>
+              <Row label="Levels">
+                {/* Number of elevation bands — more = tighter contour spacing */}
+                <HwSlider value={state.contourLevels} min={3} max={16}
+                  onChange={v => set({ contourLevels: v })} />
+              </Row>
+              <Row label="Line">
+                <ColorSwatch value={state.contourLineColor} onChange={v => set({ contourLineColor: v })} />
+              </Row>
+              <Row label="Ground">
+                <ColorSwatch value={state.contourBgColor} onChange={v => set({ contourBgColor: v })} />
+              </Row>
+              <Row label="Fill">
+                {/* 0 = contour lines over the photo, 100 = flat tinted elevation map */}
+                <HwSlider value={state.contourFill} min={0} max={100}
+                  onChange={v => set({ contourFill: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Slices brightness into elevation bands and draws the contour lines between them. Fill sweeps from lines over the photo to a clean tinted topographic map.
+              </p>
+            </EffectSection>
+
+            {/* Low-Poly / Triangulate */}
+            <EffectSection label="Low-Poly" number={3} enabled={state.lowPolyEnabled}
+              onToggle={v => set({ lowPolyEnabled: v })}>
+              <Row label="Points">
+                {/* Triangle density — more points = closer to the source photo */}
+                <HwSlider value={state.lowPolyPoints} min={50} max={1500}
+                  onChange={v => set({ lowPolyPoints: v })} />
+              </Row>
+              <Row label="Edge bias">
+                {/* How much sampling favours real edges over an even grid */}
+                <HwSlider value={state.lowPolyEdgeBias} min={0} max={100}
+                  onChange={v => set({ lowPolyEdgeBias: v })} />
+              </Row>
+              <Row label="Wireframe">
+                <TactileToggle value={state.lowPolyShowEdges} onChange={v => set({ lowPolyShowEdges: v })} />
+              </Row>
+              {state.lowPolyShowEdges && (
+                <Row label="Edge color">
+                  <ColorSwatch value={state.lowPolyEdgeColor} onChange={v => set({ lowPolyEdgeColor: v })} />
+                </Row>
+              )}
+              <Row label="Strength">
+                <HwSlider value={state.lowPolyStrength} min={0} max={100}
+                  onChange={v => set({ lowPolyStrength: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Rebuilds the image from flat-shaded triangles, biased toward real edges so facets land on the photo's actual silhouette. The classic low-poly art look.
+              </p>
+            </EffectSection>
+
+            {/* Kaleidoscope */}
+            <EffectSection label="Kaleidoscope" number={4} enabled={state.kaleidoscopeEnabled}
+              onToggle={v => set({ kaleidoscopeEnabled: v })}>
+              <Row label="Mode">
+                <HwSegment options={[{ id: 'radial', label: 'Radial' }, { id: 'mirror', label: 'Mirror' }]}
+                  value={state.kaleidoscopeMode}
+                  onChange={v => set({ kaleidoscopeMode: v as 'radial' | 'mirror' })} />
+              </Row>
+              {state.kaleidoscopeMode === 'radial' && (
+                <Row label="Segments">
+                  <HwSlider value={state.kaleidoscopeSegments} min={2} max={16}
+                    onChange={v => set({ kaleidoscopeSegments: v })} />
+                </Row>
+              )}
+              <Row label="Rotation">
+                <HwSlider value={state.kaleidoscopeAngle} min={0} max={360} unit="°"
+                  onChange={v => set({ kaleidoscopeAngle: v })} />
+              </Row>
+              <Row label="Zoom">
+                <HwSlider value={state.kaleidoscopeZoom} min={0.5} max={2} step={0.1} decimals={1} unit="×"
+                  onChange={v => set({ kaleidoscopeZoom: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Folds the image into mirrored wedges around the centre — a mandala/emblem from any photo. Rotation spins the source slice; Zoom controls how much is pulled in.
+              </p>
+            </EffectSection>
+          </EffectGroup>
+
+          {/* ── Blur & Light ──────────────────────────────────────────────── */}
+          <EffectGroup label="Blur & Light" open={!!openGroups.blur} onToggle={() => toggleGroup('blur')}
+            activeCount={[state.motionBlurEnabled, state.spotBlurEnabled, state.edgeGlowEnabled].filter(Boolean).length}>
+
+            {/* Motion Blur */}
+            <EffectSection label="Motion Blur" number={1} enabled={state.motionBlurEnabled}
+              onToggle={v => set({ motionBlurEnabled: v })}>
+              <HwSegment
+                options={[{ id:'horizontal',label:'↔ Horiz' },{ id:'vertical',label:'↕ Vert' },{ id:'zoom',label:'⊙ Zoom' }]}
+                value={state.motionBlurType ?? 'horizontal'}
+                onChange={v => set({ motionBlurType: v as typeof state.motionBlurType })}
+              />
+              <Row label="Strength">
+                <HwSlider value={state.motionBlurStrength ?? 20} min={2} max={80}
+                  onChange={v => set({ motionBlurStrength: v })} />
+              </Row>
+            </EffectSection>
+
+            {/* Spot Blur */}
+            <EffectSection label="Spot Blur" number={2} enabled={state.spotBlurEnabled}
+              onToggle={v => set({ spotBlurEnabled: v })}>
+              <Row label="BG blur">
+                <HwSlider value={state.spotBlurRadius ?? 18} min={2} max={40}
+                  onChange={v => set({ spotBlurRadius: v })} />
+              </Row>
+              <SpotBlurMap spots={state.blurSpots ?? []} onChange={spots => set({ blurSpots: spots })} />
+            </EffectSection>
+
+            {/* Edge Glow */}
+            <EffectSection label="Edge Glow" number={3} enabled={state.edgeGlowEnabled}
+              onToggle={v => set({ edgeGlowEnabled: v })}>
+              <Row label="Color">
+                <ColorSwatch value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} />
+              </Row>
+              <Row label="Intensity">
+                <HwSlider value={state.edgeGlowIntensity ?? 65} min={10} max={100}
+                  onChange={v => set({ edgeGlowIntensity: v })} />
+              </Row>
+              <Row label="Bloom">
+                <HwSlider value={state.edgeGlowBloom ?? 8} min={1} max={30}
+                  onChange={v => set({ edgeGlowBloom: v })} />
+              </Row>
+              <Row label="Darken">
+                <HwSlider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90}
+                  onChange={v => set({ edgeGlowDarken: v / 100 })} />
+              </Row>
+            </EffectSection>
+          </EffectGroup>
 
         </HardwarePanel>
 

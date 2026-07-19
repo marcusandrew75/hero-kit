@@ -179,8 +179,8 @@ export interface BackgroundState {
   postcardLevels: number;     // 2–8 per-channel quantization levels
   postcardScale: number;      // 1–8 dither cell size: 1 = linen weave, 8 = chunky game dither
 
-  // Gradient Map — remap luminance through a colour LUT (thermal / infrared /
-  // x-ray / acid etc). Recolours the whole image from a single brightness axis.
+  // Gradient Map — remap luminance through a color LUT (thermal / infrared /
+  // x-ray / acid etc). Recolors the whole image from a single brightness axis.
   gradientMapEnabled: boolean;
   gradientMapPreset: 'thermal' | 'infrared' | 'acid' | 'x-ray' | 'sunset' | 'toxic' | 'gold' | 'mono';
   gradientMapStrength: number; // 0–100, blend over the original
@@ -191,8 +191,8 @@ export interface BackgroundState {
   reliefEnabled: boolean;
   reliefAngle: number;    // 0–360°, light direction
   reliefDepth: number;    // 0–100, bevel / gradient strength
-  reliefColorize: number; // 0–100, 0 = pure lit material, 100 = original colours re-lit
-  reliefTint: string;     // base material colour (steel/bronze/stone…)
+  reliefColorize: number; // 0–100, 0 = pure lit material, 100 = original colors re-lit
+  reliefTint: string;     // base material color (steel/bronze/stone…)
 
   // Contour / Topographic — quantise luminance into elevation bands and stroke
   // the boundaries, turning a photo into a topographic map.
@@ -209,6 +209,15 @@ export interface BackgroundState {
   kaleidoscopeSegments: number; // 2–16 mirror wedges (radial mode)
   kaleidoscopeAngle: number;    // 0–360°, spins which slice of the source fills each wedge
   kaleidoscopeZoom: number;     // 0.5–2, how much of the source is pulled into each wedge
+
+  // Low-Poly / Triangulate — rebuilds the image from flat-shaded triangles,
+  // sampled with a bias toward high-contrast edges so facets land on real silhouettes.
+  lowPolyEnabled: boolean;
+  lowPolyPoints: number;     // 50–1500, triangle density
+  lowPolyEdgeBias: number;   // 0–100, how much sampling favours edges over an even grid
+  lowPolyShowEdges: boolean; // stroke a wireframe over the flat-shaded facets
+  lowPolyEdgeColor: string;
+  lowPolyStrength: number;   // 0–100, blend over the original
 
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;

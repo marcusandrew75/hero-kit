@@ -22,7 +22,7 @@ import {
 //   in-context.jpg                    Preview in Context over the canvas (wide)
 //   screen-sizes.jpg                  ratio selector toolbar (natural height)
 //   marc.jpg                          square portrait for the bio section
-//   vlad.jpg · wes.jpg · florent.jpg   testimonial avatars (square)
+//   vlad.jpg · wes.jpg · florent.jpg · herosworth.jpg   testimonial avatars (square)
 
 /** The one CTA that matters — reuses the tool's own hardware button style. */
 const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, small }) => (
@@ -413,7 +413,7 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
           </h2>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 md:gap-5 items-stretch">
+        <div className="grid md:grid-cols-2 gap-4 md:gap-5 items-stretch">
           {/* Vlad — the long quote, so it leads */}
           <figure className="control-panel landing-reveal flex flex-col justify-between"
             style={{ padding: '34px 30px 28px', transform: 'rotate(-0.4deg)' }}>
@@ -421,7 +421,8 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
               <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
                 style={{ ...GROTESK, color: T.accent }}>“</span>
               <blockquote className="text-[20px] md:text-[22px] font-bold leading-snug" style={GROTESK}>
-                I close tools like this in about a minute. HeroKit I kept open.
+                I close tools like this in about a minute.
+                <br />HeroKit I kept open.
                 <br /><br />
                 Came for one background. <span style={{ color: T.accent }}>Lost the evening to it.</span> Totally worth my time.
               </blockquote>
@@ -500,6 +501,29 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
                 <span className="text-[11px]" style={{ color: T.dim }}>
                   Brand, Lunour.com
                 </span>
+              </div>
+            </figcaption>
+          </figure>
+
+          {/* Herosworth — the "got me thinking" comparison quote */}
+          <figure className="control-panel landing-reveal flex flex-col justify-between"
+            style={{ padding: '34px 30px 28px', transform: 'rotate(-0.2deg)', transitionDelay: '0.15s' }}>
+            <div>
+              <span aria-hidden className="block text-[64px] leading-none font-bold mb-2"
+                style={{ ...GROTESK, color: T.accent }}>“</span>
+              <blockquote className="text-[20px] md:text-[22px] font-bold leading-snug" style={GROTESK}>
+                HeroKit's the first tool that's gotten close to actual <span style={{ color: T.accent }}>Photoshop-level effect stacking</span> that I&nbsp;have used, great effect quality + no signup — it has genuinely earned a spot in my toolkit.
+              </blockquote>
+            </div>
+            <figcaption className="flex items-center gap-3 mt-8">
+              <Avatar src="/landing/herosworth.jpg" alt="Herosworth" initial="H" />
+              <div className="flex flex-col gap-[2px]">
+                <span className="text-[13px] font-bold" style={GROTESK}>Herosworth</span>
+                <a href="https://x.com/herosdesign1" target="_blank" rel="noreferrer"
+                  className="text-[11px] underline underline-offset-2 transition-colors w-fit"
+                  style={{ color: T.muted }}
+                  onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                  onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>@herosdesign1</a>
               </div>
             </figcaption>
           </figure>

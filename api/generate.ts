@@ -1,14 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // Prompt-to-background generation, proxied server-side so the Replicate API
-// token never reaches the client bundle. Using Flux 1.1 Pro for now — it's
-// part of Replicate's "try for free" collection (replicate.com/collections/
-// try-for-free), so it runs on the account's free quota with no billing
-// required, unlike Flux Schnell which needs paid credit despite being
-// cheaper per-image once billing is set up. Swap back to flux-schnell
-// (or another paid model) once billing's on and the free quota matters less.
+// token never reaches the client bundle. Using Flux 2 Pro — like flux-1.1-pro
+// before it, it's part of Replicate's "try for free" collection (replicate.
+// com/collections/try-for-free, confirmed at time of writing), so it runs on
+// the account's free quota with no billing required. Swap to a paid model
+// once billing's on and the free quota matters less.
 
-const MODEL = 'black-forest-labs/flux-1.1-pro';
+const MODEL = 'black-forest-labs/flux-2-pro';
 const MAX_PROMPT_LENGTH = 500;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -44,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Prefer: 'wait',
       },
       body: JSON.stringify({
-        input: { prompt, aspect_ratio: '16:9', output_format: 'jpg' },
+        input: { prompt, aspect_ratio: '16:9', output_format: 'jpg', output_quality: 90 },
       }),
     });
 

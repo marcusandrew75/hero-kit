@@ -1473,16 +1473,18 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
         {/* ── Source ─────────────────────────────────────────────────────── */}
         <HardwarePanel label="Source" number={2}>
-          {/* Upload/Generate toggle hidden for now — Generate uses a paid,
-              per-call Replicate API and shouldn't be reachable on the free
-              public tool until it's gated (rate limit / paywall). Logic and
-              UI both kept intact behind sourceMode, just not switchable. */}
-          {false && (
-            <HwSegment
-              options={[{ id:'upload',label:'Upload' },{ id:'generate',label:'Generate' }]}
-              value={sourceMode} onChange={v => setSourceMode(v as 'upload' | 'generate')}
-            />
-          )}
+          {/* Upload/Generate toggle — back on the paid Replicate path
+              (services/generate.ts, api/generate.ts) rather than the local-
+              WebGPU PoC (services/generateLocal.ts, still intact but
+              unwired — its ~4min first-download and 512×512 cap weren't
+              good enough to ship). Now pointed at Flux 2 Pro (api/
+              generate.ts), still on Replicate's free-tier collection at
+              time of writing, same as flux-1.1-pro was — testing it live
+              per explicit request, not gated/rate-limited yet. */}
+          <HwSegment
+            options={[{ id:'upload',label:'Upload' },{ id:'generate',label:'Generate' }]}
+            value={sourceMode} onChange={v => setSourceMode(v as 'upload' | 'generate')}
+          />
           {sourceMode === 'upload' ? (
             hasSource ? (
               <>

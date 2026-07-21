@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@paper-design/shaders-react": "^0.0.77",
     "@vercel/analytics": "^2.0.1",
     "d3-delaunay": "^6.0.4",
     "delaunator": "^5.1.0",
     "html-to-image": "1.11.11",
+    "onnxruntime-web": "^1.27.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },

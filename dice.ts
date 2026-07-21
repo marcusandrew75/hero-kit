@@ -47,6 +47,7 @@ const DUOTONE_PAIRS: [string, string][] = [
 const EDGE_GLOW_COLORS = ['#00ffff', '#ff00aa', '#ffd23f', '#39ff14', '#ff6b35'];
 const RELIEF_TINTS = ['#8a8a8a', '#b08d57', '#9c9284', '#6b7280', '#b87333']; // steel/bronze/stone/slate/copper
 const LOW_POLY_EDGE_COLORS = ['#000000', '#ffffff', '#1a2b1a', '#e84320'];
+const VORONOI_GAP_COLORS = ['#0a0a0a', '#1a1a1a', '#ffffff', '#e84320'];
 const SPLIT_SHADOW_COLORS = ['#1a237e', '#0a1f14', '#2d1b00'];
 const SPLIT_HIGHLIGHT_COLORS = ['#ff6d00', '#ffd23f', '#ee4266'];
 const AMBIENT_COLORS = ['#6366f1', '#ff6b35', '#06d6a0', '#ffd23f', '#ee4266'];
@@ -91,6 +92,14 @@ const HEROES: Hero[] = [
       silkscreenPaperColor: DEFAULT.silkscreenPaperColor,
       silkscreenInk1: DEFAULT.silkscreenInk1, silkscreenInk2: DEFAULT.silkscreenInk2, silkscreenInk3: DEFAULT.silkscreenInk3,
       silkscreenKeyThreshold: randInt(20, 45), silkscreenStipple: randInt(20, 55),
+    }),
+  },
+  {
+    id: 'bloom',
+    make: () => ({
+      bloomEnabled: true,
+      bloomThreshold: randInt(45, 75), bloomIntensity: randInt(55, 90),
+      bloomRadius: randInt(15, 45), bloomWarmth: randInt(-20, 20),
     }),
   },
   {
@@ -143,6 +152,17 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'voronoi',
+    make: () => ({
+      voronoiEnabled: true,
+      voronoiPoints: randInt(150, 700),
+      voronoiEdgeBias: randInt(40, 80),
+      voronoiGapWidth: randInt(1, 5),
+      voronoiGapColor: pick(VORONOI_GAP_COLORS),
+      voronoiStrength: randInt(85, 100),
+    }),
+  },
+  {
     id: 'kaleidoscope',
     make: () => ({
       kaleidoscopeEnabled: true,
@@ -150,6 +170,14 @@ const HEROES: Hero[] = [
       kaleidoscopeSegments: pick([3, 4, 6, 8, 12]),
       kaleidoscopeAngle: randInt(0, 360),
       kaleidoscopeZoom: rand(0.8, 1.4),
+    }),
+  },
+  {
+    id: 'kuwahara',
+    make: () => ({
+      kuwaharaEnabled: true,
+      kuwaharaRadius: randInt(2, 8), kuwaharaStrength: randInt(70, 100),
+      kuwaharaSoftness: randInt(0, 40), kuwaharaVibrance: randInt(0, 30), kuwaharaEdgeAccent: randInt(0, 25),
     }),
   },
   {
@@ -235,6 +263,20 @@ const HEROES: Hero[] = [
       edgeGlowEnabled: true, edgeGlowColor: pick(EDGE_GLOW_COLORS),
       edgeGlowIntensity: randInt(55, 90), edgeGlowBloom: randInt(6, 16), edgeGlowDarken: rand(0.3, 0.6),
     }),
+  },
+  {
+    id: 'liquidGlass',
+    make: () => {
+      const count = chance(0.6) ? 1 : 2;
+      const liquidGlassBlobs = Array.from({ length: count }, (_, i) => ({
+        id: `dice-glass-${i}`, x: rand(0.3, 0.7), y: rand(0.3, 0.7), radius: rand(0.18, 0.35),
+      }));
+      return {
+        liquidGlassEnabled: true, liquidGlassBlobs,
+        liquidGlassRefraction: randInt(35, 80), liquidGlassFrost: rand(2, 12),
+        liquidGlassFringe: randInt(25, 65), liquidGlassRimIntensity: randInt(35, 80),
+      };
+    },
   },
 ];
 

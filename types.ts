@@ -170,6 +170,14 @@ export interface BackgroundState {
   silkscreenKeyThreshold: number; // 0–100, luminance below this → black key plate
   silkscreenStipple: number;      // 0–100, speckle noise at tonal boundaries
 
+  // Bloom — extracts the photo's own bright highlights, blurs them, and
+  // screen-composites them back over the image for a dreamy glow.
+  bloomEnabled: boolean;
+  bloomThreshold: number; // 0–100, luminance % above which pixels start glowing
+  bloomIntensity: number; // 0–100, glow strength
+  bloomRadius: number;    // blur radius px — tight punchy glow vs soft wide haze
+  bloomWarmth: number;    // -50 to 50, pushes the glow's own colour warm/cool
+
   // Postcard — oversaturated warm grade + limited palette + fine ordered
   // texture. Texture scale sweeps the look from vintage linen-postcard weave
   // (fine) to 90s videogame dither (chunky) — same mechanics, different era.
@@ -219,6 +227,26 @@ export interface BackgroundState {
   lowPolyEdgeColor: string;
   lowPolyStrength: number;   // 0–100, blend over the original
 
+  // Voronoi / Crystallize — shattered-glass mosaic. Geometric dual of
+  // Low-Poly: same point-sampling, but fills Voronoi cells instead of
+  // triangles, with visible cracks between shards.
+  voronoiEnabled: boolean;
+  voronoiPoints: number;    // 50–1500, shard density
+  voronoiEdgeBias: number;  // 0–100, how much sampling favours edges over an even grid
+  voronoiGapWidth: number;  // 0–8px, crack width between shards — 0 = seamless mosaic
+  voronoiGapColor: string;
+  voronoiStrength: number;  // 0–100, blend over the original
+
+  // Kuwahara / Oil Paint — repaints each pixel with the mean colour of
+  // whichever of its 4 overlapping quadrants has the lowest luminance
+  // variance. Flat regions smooth into brush-stroke patches, edges stay sharp.
+  kuwaharaEnabled: boolean;
+  kuwaharaRadius: number;   // 1–16px, quadrant window size — "brush stroke" size
+  kuwaharaStrength: number; // 0–100, blend over the original
+  kuwaharaSoftness: number;    // 0–100, blend the hard quadrant winner toward a variance-weighted average of all 4
+  kuwaharaVibrance: number;    // 0–100, saturation boost on the painted result
+  kuwaharaEdgeAccent: number;  // 0–100, darken along real photo edges for defined brush-stroke boundaries
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12
@@ -264,6 +292,16 @@ export interface BackgroundState {
   spotBlurEnabled: boolean;
   spotBlurRadius: number;        // background blur px (5–40)
   blurSpots: BlurSpot[];
+
+  // Liquid Glass — one or more glass blobs (reuses BlurSpot's {id,x,y,radius}
+  // shape and the same SpotBlurMap placement UI) that bend the image behind
+  // them like a lens, with frosted blur, chromatic fringing and a rim glow.
+  liquidGlassEnabled: boolean;
+  liquidGlassBlobs: BlurSpot[];
+  liquidGlassRefraction: number;  // 0–100, lens bulge strength
+  liquidGlassFrost: number;       // 0–20px, blur inside the blob
+  liquidGlassFringe: number;      // 0–100, chromatic fringe at the rim
+  liquidGlassRimIntensity: number; // 0–100, glowing rim highlight strength
 
   // Effect Mask — paint a region to restrict the whole active effect stack to;
   // everywhere else stays as the original, unprocessed image.

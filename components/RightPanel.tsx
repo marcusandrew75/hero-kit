@@ -2147,7 +2147,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
           {/* ── Structure & Form ──────────────────────────────────────────── */}
           <EffectGroup label="Structure & Form" open={!!openGroups.structure} onToggle={() => toggleGroup('structure')}
-            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.kaleidoscopeEnabled].filter(Boolean).length}>
+            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.voronoiEnabled, state.kaleidoscopeEnabled, state.kuwaharaEnabled].filter(Boolean).length}>
 
             {/* Relief / Emboss-3D */}
             <EffectSection label="Relief" number={1} enabled={state.reliefEnabled}
@@ -2227,8 +2227,40 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               </p>
             </EffectSection>
 
+            {/* Voronoi / Crystallize */}
+            <EffectSection label="Voronoi" number={4} enabled={state.voronoiEnabled}
+              onToggle={v => set({ voronoiEnabled: v })}>
+              <Row label="Points">
+                {/* Shard density — more points = smaller, finer facets */}
+                <HwSlider value={state.voronoiPoints} min={50} max={1500}
+                  onChange={v => set({ voronoiPoints: v })} />
+              </Row>
+              <Row label="Edge bias">
+                {/* How much sampling favours real edges over an even grid */}
+                <HwSlider value={state.voronoiEdgeBias} min={0} max={100}
+                  onChange={v => set({ voronoiEdgeBias: v })} />
+              </Row>
+              <Row label="Gap width">
+                {/* 0 = seamless mosaic, higher = visible cracks between shards */}
+                <HwSlider value={state.voronoiGapWidth} min={0} max={8}
+                  onChange={v => set({ voronoiGapWidth: v })} />
+              </Row>
+              {state.voronoiGapWidth > 0 && (
+                <Row label="Gap color">
+                  <ColorSwatch value={state.voronoiGapColor} onChange={v => set({ voronoiGapColor: v })} />
+                </Row>
+              )}
+              <Row label="Strength">
+                <HwSlider value={state.voronoiStrength} min={0} max={100}
+                  onChange={v => set({ voronoiStrength: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Shatters the image into an irregular faceted mosaic — Voronoi cells, the geometric dual of Low-Poly's triangles. Cracked-glass gaps between shards sell the shatter.
+              </p>
+            </EffectSection>
+
             {/* Kaleidoscope */}
-            <EffectSection label="Kaleidoscope" number={4} enabled={state.kaleidoscopeEnabled}
+            <EffectSection label="Kaleidoscope" number={5} enabled={state.kaleidoscopeEnabled}
               onToggle={v => set({ kaleidoscopeEnabled: v })}>
               <Row label="Mode">
                 <HwSegment options={[{ id: 'radial', label: 'Radial' }, { id: 'mirror', label: 'Mirror' }]}
@@ -2253,11 +2285,42 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 Folds the image into mirrored wedges around the centre — a mandala/emblem from any photo. Rotation spins the source slice; Zoom controls how much is pulled in.
               </p>
             </EffectSection>
+
+            {/* Kuwahara / Oil Paint */}
+            <EffectSection label="Kuwahara" number={6} enabled={state.kuwaharaEnabled}
+              onToggle={v => set({ kuwaharaEnabled: v })}>
+              <Row label="Radius">
+                {/* Quadrant window size — bigger = larger, blockier brush strokes */}
+                <HwSlider value={state.kuwaharaRadius} min={1} max={16}
+                  onChange={v => set({ kuwaharaRadius: v })} />
+              </Row>
+              <Row label="Strength">
+                <HwSlider value={state.kuwaharaStrength} min={0} max={100}
+                  onChange={v => set({ kuwaharaStrength: v })} />
+              </Row>
+              <Row label="Softness">
+                {/* Blends the hard quadrant winner toward a variance-weighted
+                    average of all 4 — rounds off the blocky brush edges */}
+                <HwSlider value={state.kuwaharaSoftness} min={0} max={100}
+                  onChange={v => set({ kuwaharaSoftness: v })} />
+              </Row>
+              <Row label="Vibrance">
+                <HwSlider value={state.kuwaharaVibrance} min={0} max={100}
+                  onChange={v => set({ kuwaharaVibrance: v })} />
+              </Row>
+              <Row label="Edge accent">
+                <HwSlider value={state.kuwaharaEdgeAccent} min={0} max={100}
+                  onChange={v => set({ kuwaharaEdgeAccent: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Repaints each pixel with the mean colour of its most uniform neighbourhood — flat areas smooth into brush-stroke patches, edges stay sharp. The genuine oil-painting look, built entirely from the photo's own colors.
+              </p>
+            </EffectSection>
           </EffectGroup>
 
           {/* ── Blur & Light ──────────────────────────────────────────────── */}
           <EffectGroup label="Blur & Light" open={!!openGroups.blur} onToggle={() => toggleGroup('blur')}
-            activeCount={[state.motionBlurEnabled, state.spotBlurEnabled, state.edgeGlowEnabled].filter(Boolean).length}>
+            activeCount={[state.motionBlurEnabled, state.spotBlurEnabled, state.liquidGlassEnabled, state.edgeGlowEnabled, state.bloomEnabled].filter(Boolean).length}>
 
             {/* Motion Blur */}
             <EffectSection label="Motion Blur" number={1} enabled={state.motionBlurEnabled}
@@ -2283,8 +2346,33 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               <SpotBlurMap spots={state.blurSpots ?? []} onChange={spots => set({ blurSpots: spots })} />
             </EffectSection>
 
+            {/* Liquid Glass */}
+            <EffectSection label="Liquid Glass" number={3} enabled={state.liquidGlassEnabled}
+              onToggle={v => set({ liquidGlassEnabled: v })}>
+              <SpotBlurMap spots={state.liquidGlassBlobs ?? []} onChange={blobs => set({ liquidGlassBlobs: blobs })} />
+              <Row label="Refraction">
+                <HwSlider value={state.liquidGlassRefraction} min={0} max={100}
+                  onChange={v => set({ liquidGlassRefraction: v })} />
+              </Row>
+              <Row label="Frost">
+                <HwSlider value={state.liquidGlassFrost} min={0} max={20}
+                  onChange={v => set({ liquidGlassFrost: v })} />
+              </Row>
+              <Row label="Fringe">
+                <HwSlider value={state.liquidGlassFringe} min={0} max={100}
+                  onChange={v => set({ liquidGlassFringe: v })} />
+              </Row>
+              <Row label="Rim">
+                <HwSlider value={state.liquidGlassRimIntensity} min={0} max={100}
+                  onChange={v => set({ liquidGlassRimIntensity: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Places a glass blob that bends the image behind it like a lens, with a frosted blur inside, chromatic fringing and a glowing rim at its edge. Click the mini-map to place one.
+              </p>
+            </EffectSection>
+
             {/* Edge Glow */}
-            <EffectSection label="Edge Glow" number={3} enabled={state.edgeGlowEnabled}
+            <EffectSection label="Edge Glow" number={4} enabled={state.edgeGlowEnabled}
               onToggle={v => set({ edgeGlowEnabled: v })}>
               <Row label="Color">
                 <ColorSwatch value={state.edgeGlowColor ?? '#00ffff'} onChange={v => set({ edgeGlowColor: v })} />
@@ -2301,6 +2389,30 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 <HwSlider value={Math.round((state.edgeGlowDarken ?? 0.5) * 100)} min={0} max={90}
                   onChange={v => set({ edgeGlowDarken: v / 100 })} />
               </Row>
+            </EffectSection>
+
+            {/* Bloom */}
+            <EffectSection label="Bloom" number={5} enabled={state.bloomEnabled}
+              onToggle={v => set({ bloomEnabled: v })}>
+              <Row label="Threshold">
+                <HwSlider value={state.bloomThreshold} min={0} max={100}
+                  onChange={v => set({ bloomThreshold: v })} />
+              </Row>
+              <Row label="Intensity">
+                <HwSlider value={state.bloomIntensity} min={0} max={100}
+                  onChange={v => set({ bloomIntensity: v })} />
+              </Row>
+              <Row label="Radius">
+                <HwSlider value={state.bloomRadius} min={1} max={80}
+                  onChange={v => set({ bloomRadius: v })} />
+              </Row>
+              <Row label="Warmth">
+                <HwSlider value={state.bloomWarmth} min={-50} max={50}
+                  onChange={v => set({ bloomWarmth: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Extracts the photo's own bright highlights and blooms them into a soft glow — a warm sunset highlight blooms warm, a blue sky highlight blooms blue.
+              </p>
             </EffectSection>
           </EffectGroup>
 

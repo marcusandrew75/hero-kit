@@ -3,6 +3,7 @@ import React, { useRef, useEffect } from 'react';
 import { BackgroundState } from '../types';
 import { Warp, Voronoi, Metaballs, PulsingBorder, GodRays, SmokeRing } from '@paper-design/shaders-react';
 import Delaunator from 'delaunator';
+import { Delaunay } from 'd3-delaunay';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1724,6 +1725,67 @@ const applyEdgeGlow = (
   return new Uint8ClampedArray(cCtx.getImageData(0, 0, w, h).data);
 };
 
+// ─── Bloom ────────────────────────────────────────────────────────────────────
+// Reuses Edge Glow's own blur-then-screen-composite recipe, but the glow layer
+// carries the photo's OWN highlight colour (not a fixed hex) and there's no
+// base-darkening step — screen compositing is inherently additive, so it reads
+// as the photo's own bright spots blooming, not a colourised overlay.
+
+const applyBloom = (
+  data: Uint8ClampedArray, w: number, h: number,
+  threshold: number, intensity: number, radius: number, warmth: number,
+): Uint8ClampedArray => {
+  const thresh = Math.max(0, Math.min(100, threshold)) / 100;
+  const str = Math.max(0, Math.min(100, intensity)) / 100;
+  const warm = Math.max(-50, Math.min(50, warmth)) * 1.2;
+  // Fixed transition width, NOT stretched across (threshold..100) — stretching
+  // it collapses to zero width as threshold approaches 100, silently killing
+  // the whole effect right when a user pushes Threshold up expecting more.
+  // A fixed band means Threshold maxed still leaves a real (if narrow) glow
+  // on the hottest highlights, instead of nothing.
+  const softness = 0.14;
+  // Glow layer carries a BOOSTED version of the pixel's own colour — the
+  // undboosted version just looked like a diffused copy of the photo, not a
+  // hot light source. 1.35x keeps real colour distinction (a warm highlight
+  // still reads warm) while giving genuinely bright, punchy blooms.
+  const boost = 1.35;
+
+  const glowOff = document.createElement('canvas'); glowOff.width = w; glowOff.height = h;
+  const gCtx = glowOff.getContext('2d')!;
+  const gImg = gCtx.createImageData(w, h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    const lum = (data[i]*0.299 + data[i+1]*0.587 + data[i+2]*0.114) / 255;
+    const t = Math.max(0, Math.min(1, (lum - thresh) / softness));
+    const mask = t * t * (3 - 2 * t); // smoothstep — no hard-cutoff flicker
+    gImg.data[i]   = clamp((data[i]   + warm) * boost);
+    gImg.data[i+1] = clamp(data[i+1] * boost);
+    gImg.data[i+2] = clamp((data[i+2] - warm) * boost);
+    gImg.data[i+3] = Math.round(mask * str * 255);
+  }
+  gCtx.putImageData(gImg, 0, 0);
+
+  // Multi-scale blur — a wide soft halo, a medium pass, and a sharp hot core
+  // layered together — is what actually reads as "bloom" rather than a
+  // single flat blur, which just looks like mild haze.
+  const bloomOff = document.createElement('canvas'); bloomOff.width = w; bloomOff.height = h;
+  const bCtx = bloomOff.getContext('2d')!;
+  bCtx.filter = `blur(${radius * 2.2}px)`; bCtx.drawImage(glowOff, 0, 0); bCtx.filter = 'none';
+  bCtx.globalAlpha = 0.85;
+  bCtx.filter = `blur(${radius}px)`; bCtx.drawImage(glowOff, 0, 0); bCtx.filter = 'none';
+  bCtx.globalAlpha = 0.7;
+  bCtx.drawImage(glowOff, 0, 0); // sharp core, no blur
+  bCtx.globalAlpha = 1;
+
+  const compOff = document.createElement('canvas'); compOff.width = w; compOff.height = h;
+  const cCtx = compOff.getContext('2d')!;
+  cCtx.putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0);
+  cCtx.globalCompositeOperation = 'screen';
+  cCtx.drawImage(bloomOff, 0, 0);
+  cCtx.globalCompositeOperation = 'source-over';
+
+  return new Uint8ClampedArray(cCtx.getImageData(0, 0, w, h).data);
+};
+
 // ─── Split Tone ───────────────────────────────────────────────────────────────
 // Maps shadow tones to one color and highlight tones to another
 
@@ -2033,6 +2095,241 @@ const applyLowPoly = (
     out[i+2] = clamp(data[i+2] + (triData[i+2] - data[i+2]) * str);
     out[i+3] = data[i+3];
   }
+  return out;
+};
+
+// ─── Voronoi / Crystallize ────────────────────────────────────────────────────
+// Voronoi cells are the geometric DUAL of Delaunay triangulation — same point
+// set, different geometry — so this reuses sampleLowPolyPoints verbatim.
+// Uses d3-delaunay (built on delaunator, same author) for its Voronoi class,
+// which handles proper cell-polygon construction AND clipping to the image
+// bounds — the boundary/infinite-cell edge cases a hand-rolled circumcenter
+// approach risks getting wrong, same reasoning that justified delaunator
+// itself for Low-Poly's triangulation. Visible cracks between cells (via
+// gapWidth) are what actually sell "shattered glass" over a plain faceted
+// mosaic — Low-Poly already covers the clean flat-shaded look.
+
+const applyVoronoi = (
+  data: Uint8ClampedArray, w: number, h: number,
+  points: [number, number][], gapWidth: number, gapColor: string, strength: number,
+): Uint8ClampedArray => {
+  const delaunay = Delaunay.from(points);
+  const voronoi = delaunay.voronoi([0, 0, w, h]);
+
+  const off = document.createElement('canvas');
+  off.width = w; off.height = h;
+  const ctx = off.getContext('2d')!;
+
+  const clampCoord = (v: number, max: number) => Math.max(0, Math.min(max, v));
+  const sampleAt = (sx: number, sy: number, ch: number) =>
+    bilinearSample(data, w, h, clampCoord(sx, w - 1), clampCoord(sy, h - 1), ch);
+
+  // Small fixed-radius cross-sample around the cell's generator point — the
+  // generator IS the natural representative colour for "everything closest
+  // to this point," so unlike Low-Poly's toward-each-vertex sampling (which
+  // needs a fixed 3-vertex shape) this doesn't need to know the cell's
+  // (variable-count) vertex list at all.
+  const jitter = Math.max(1, Math.min(w, h) / 200);
+
+  for (let i = 0; i < points.length; i++) {
+    const poly = voronoi.cellPolygon(i);
+    if (!poly || poly.length < 3) continue;
+    const [px, py] = points[i];
+    const sxs = [px, px - jitter, px + jitter, px, px];
+    const sys = [py, py, py, py - jitter, py + jitter];
+    let r = 0, g = 0, b = 0;
+    for (let s = 0; s < 5; s++) {
+      r += sampleAt(sxs[s], sys[s], 0);
+      g += sampleAt(sxs[s], sys[s], 1);
+      b += sampleAt(sxs[s], sys[s], 2);
+    }
+    ctx.fillStyle = `rgb(${Math.round(r / 5)},${Math.round(g / 5)},${Math.round(b / 5)})`;
+    ctx.beginPath();
+    ctx.moveTo(poly[0][0], poly[0][1]);
+    for (let v = 1; v < poly.length; v++) ctx.lineTo(poly[v][0], poly[v][1]);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Cracks — a separate pass over every cell, so strokes read as crisp lines
+  // rather than being partially painted over by a neighbour's fill. Skipped
+  // entirely at gapWidth 0 for a clean seamless mosaic.
+  if (gapWidth > 0) {
+    ctx.strokeStyle = gapColor;
+    ctx.lineWidth = gapWidth;
+    ctx.lineJoin = 'round';
+    for (let i = 0; i < points.length; i++) {
+      const poly = voronoi.cellPolygon(i);
+      if (!poly || poly.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0], poly[0][1]);
+      for (let v = 1; v < poly.length; v++) ctx.lineTo(poly[v][0], poly[v][1]);
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+
+  const cellData = ctx.getImageData(0, 0, w, h).data;
+  const str = Math.max(0, Math.min(100, strength)) / 100;
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    out[i]   = clamp(data[i]   + (cellData[i]   - data[i])   * str);
+    out[i+1] = clamp(data[i+1] + (cellData[i+1] - data[i+1]) * str);
+    out[i+2] = clamp(data[i+2] + (cellData[i+2] - data[i+2]) * str);
+    out[i+3] = data[i+3];
+  }
+  return out;
+};
+
+// ─── Kuwahara (Oil Paint) ───────────────────────────────────────────────────────
+// Classic painterly stylization: each pixel is repainted with the mean colour
+// of whichever of its 4 overlapping quadrants has the lowest luminance
+// variance. Flat regions smooth into brush-stroke-like patches; edges stay
+// sharp because one quadrant is always cleaner right next to a hard edge.
+// Nothing is invented — unlike Fresco's synthetic texture overlay, the output
+// is built entirely from the photo's own pixels, which is what gives it a
+// genuine oil-painting read.
+//
+// Naive per-pixel windowed mean/variance is O(radius²) per pixel — brutal at
+// double-digit radii. Summed-area tables (2D prefix sums) turn any
+// rectangle's sum into an O(1) lookup after one O(w·h) precompute, so radius
+// stops being a performance knob at all. Float64Array (not Float32) for the
+// prefix tables specifically: rectSum subtracts two large nearly-equal
+// prefix values, and float32's exact-integer ceiling (2^24) risks
+// catastrophic-cancellation error in both the variance and mean-colour
+// results at larger working resolutions — float64's ceiling (2^53) removes
+// that risk entirely.
+
+const applyKuwahara = (
+  data: Uint8ClampedArray, w: number, h: number,
+  radius: number, strength: number, softness: number, vibrance: number, edgeAccent: number,
+): Uint8ClampedArray => {
+  const r = Math.max(1, Math.round(radius));
+  const str = Math.max(0, Math.min(100, strength)) / 100;
+  const softFrac = Math.max(0, Math.min(100, softness)) / 100;
+  const vibBoost = 1 + (Math.max(0, Math.min(100, vibrance)) / 100) * 1.2;
+  const edgeFrac = Math.max(0, Math.min(100, edgeAccent)) / 100;
+  const out = new Uint8ClampedArray(data);
+  if (str <= 0) return out;
+
+  const iw = w + 1, ih = h + 1;
+  const sumR  = new Float64Array(iw * ih);
+  const sumG  = new Float64Array(iw * ih);
+  const sumB  = new Float64Array(iw * ih);
+  const sumL  = new Float64Array(iw * ih);
+  const sumL2 = new Float64Array(iw * ih);
+
+  for (let y = 0; y < h; y++) {
+    let rowR = 0, rowG = 0, rowB = 0, rowL = 0, rowL2 = 0;
+    const rowAbove = y * iw;
+    const rowHere = (y + 1) * iw;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const rr = data[i], gg = data[i+1], bb = data[i+2];
+      const lum = rr * 0.299 + gg * 0.587 + bb * 0.114;
+      rowR += rr; rowG += gg; rowB += bb; rowL += lum; rowL2 += lum * lum;
+      const idx = rowHere + x + 1;
+      const above = rowAbove + x + 1;
+      sumR[idx]  = sumR[above]  + rowR;
+      sumG[idx]  = sumG[above]  + rowG;
+      sumB[idx]  = sumB[above]  + rowB;
+      sumL[idx]  = sumL[above]  + rowL;
+      sumL2[idx] = sumL2[above] + rowL2;
+    }
+  }
+
+  const rectSum = (table: Float64Array, x0: number, y0: number, x1: number, y1: number) =>
+    table[y1 * iw + x1] - table[y0 * iw + x1] - table[y1 * iw + x0] + table[y0 * iw + x0];
+
+  // Softness blends the hard winner-take-all quadrant toward a variance-
+  // weighted average of all 4 — weight = 1/(1+variance)^8, a fixed exponent
+  // matching the "generalized/weighted Kuwahara" literature convention,
+  // sharp enough that the lowest-variance quadrant still dominates even at
+  // full softness rather than degrading into a plain box blur.
+  const quadVar = new Float64Array(4);
+  const quadR = new Float64Array(4);
+  const quadG = new Float64Array(4);
+  const quadB = new Float64Array(4);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let bestVar = Infinity, bestR = 0, bestG = 0, bestB = 0, q = 0;
+      for (let qy = -1; qy <= 1; qy += 2) {
+        const y0 = Math.max(0, Math.min(h, qy < 0 ? y - r : y));
+        const y1 = Math.max(0, Math.min(h, qy < 0 ? y + 1 : y + r + 1));
+        for (let qx = -1; qx <= 1; qx += 2, q++) {
+          const x0 = Math.max(0, Math.min(w, qx < 0 ? x - r : x));
+          const x1 = Math.max(0, Math.min(w, qx < 0 ? x + 1 : x + r + 1));
+          const area = (x1 - x0) * (y1 - y0);
+          if (area <= 0) { quadVar[q] = Infinity; continue; }
+          const sL  = rectSum(sumL, x0, y0, x1, y1);
+          const sL2 = rectSum(sumL2, x0, y0, x1, y1);
+          const mean = sL / area;
+          const variance = Math.max(0, sL2 / area - mean * mean);
+          const qr = rectSum(sumR, x0, y0, x1, y1) / area;
+          const qg = rectSum(sumG, x0, y0, x1, y1) / area;
+          const qb = rectSum(sumB, x0, y0, x1, y1) / area;
+          if (softFrac > 0) { quadVar[q] = variance; quadR[q] = qr; quadG[q] = qg; quadB[q] = qb; }
+          if (variance < bestVar) {
+            bestVar = variance; bestR = qr; bestG = qg; bestB = qb;
+          }
+        }
+      }
+
+      if (softFrac > 0) {
+        // Straight (unweighted) average of all 4 quadrant means. A variance-
+        // weighted blend was tried first, but it's self-defeating: right at
+        // an edge, one quadrant's variance is always dramatically lower than
+        // the others, so a weighted blend collapses back to the hard winner
+        // no matter the Softness value; away from edges, the 4 quadrant
+        // MEANS are already nearly identical (that's what makes it "flat"),
+        // so weighting doesn't matter there either — net result, invisible
+        // at any slider position. A plain average has no such blind spot:
+        // it visibly softens toward a blur at 100 and ramps cleanly from 0.
+        let n = 0, avgR = 0, avgG = 0, avgB = 0;
+        for (let k = 0; k < 4; k++) {
+          if (quadVar[k] === Infinity) continue;
+          avgR += quadR[k]; avgG += quadG[k]; avgB += quadB[k]; n++;
+        }
+        if (n > 0) {
+          avgR /= n; avgG /= n; avgB /= n;
+          bestR = bestR + (avgR - bestR) * softFrac;
+          bestG = bestG + (avgG - bestG) * softFrac;
+          bestB = bestB + (avgB - bestB) * softFrac;
+        }
+      }
+
+      if (vibBoost !== 1) {
+        const gray = bestR * 0.299 + bestG * 0.587 + bestB * 0.114;
+        bestR = gray + (bestR - gray) * vibBoost;
+        bestG = gray + (bestG - gray) * vibBoost;
+        bestB = gray + (bestB - gray) * vibBoost;
+      }
+
+      const i = (y * w + x) * 4;
+      out[i]   = clamp(data[i]   + (bestR - data[i])   * str);
+      out[i+1] = clamp(data[i+1] + (bestG - data[i+1]) * str);
+      out[i+2] = clamp(data[i+2] + (bestB - data[i+2]) * str);
+      out[i+3] = data[i+3];
+    }
+  }
+
+  // Edge Accent — a final pass darkening along the ORIGINAL photo's real
+  // structural edges (not artifacts of the quadrant selection above), for
+  // more defined brush-stroke boundaries. Multiplicative, capped short of a
+  // hard outline.
+  if (edgeFrac > 0) {
+    const edges = computeSobelEdges(data, w, h);
+    for (let p = 0; p < w * h; p++) {
+      const factor = 1 - edges[p] * edgeFrac * 0.7;
+      if (factor >= 1) continue;
+      const i = p * 4;
+      out[i]   = clamp(out[i]   * factor);
+      out[i+1] = clamp(out[i+1] * factor);
+      out[i+2] = clamp(out[i+2] * factor);
+    }
+  }
+
   return out;
 };
 
@@ -2461,6 +2758,165 @@ const applySpotBlur = (
   return out;
 };
 
+// ─── Liquid Glass ─────────────────────────────────────────────────────────────
+// One or more glass "blobs" (reusing Spot Blur's exact placement architecture —
+// same SpotData shape, same click/drag/resize UI) bend the image behind them
+// like a lens, with a frosted blur inside, chromatic fringing at the rim, and
+// a glowing rim highlight. Blobs are composited SEQUENTIALLY (painter's-
+// algorithm — each blob's result drawn over the previous), not resolved by a
+// per-pixel "nearest blob" test: that avoids a visible tear where two blobs'
+// assignment would otherwise flip, and lets each blob's expensive work (pixel
+// loop + blur) stay confined to its own bounding box instead of the full
+// canvas — a real perf win, not just a correctness one.
+
+const applyLiquidGlass = (
+  src: HTMLCanvasElement, w: number, h: number,
+  blobs: SpotData[], refraction: number, frost: number, fringe: number, rimIntensity: number,
+): HTMLCanvasElement => {
+  let current = src;
+  const exponent = 1 + (Math.max(0, Math.min(100, refraction)) / 100) * 4; // 1..5, never divides by zero
+  const fringeAmt = Math.max(0, Math.min(100, fringe)) / 100;
+  const frostPx = Math.max(0, frost);
+
+  for (const blob of blobs) {
+    // ONE canonical radius, used identically as the lens boundary AND the
+    // mask's outer radius — using two different radii here is what caused
+    // visible ghosting in the first draft of this effect (see plan notes).
+    const rPx = blob.radius * Math.min(w, h) * 0.55;
+    if (rPx < 1) continue;
+    const cx = blob.x * w, cy = blob.y * h;
+
+    const pad = Math.max(4, frostPx * 3);
+    const bx0 = Math.max(0, Math.floor(cx - rPx - pad));
+    const by0 = Math.max(0, Math.floor(cy - rPx - pad));
+    const bx1 = Math.min(w, Math.ceil(cx + rPx + pad));
+    const by1 = Math.min(h, Math.ceil(cy + rPx + pad));
+    const bw = bx1 - bx0, bh = by1 - by0;
+    if (bw <= 0 || bh <= 0) continue;
+
+    const curCtx = current.getContext('2d')!;
+    const localBuf = curCtx.getImageData(bx0, by0, bw, bh).data;
+
+    const glass = new Uint8ClampedArray(bw * bh * 4);
+    for (let ly = 0; ly < bh; ly++) {
+      for (let lx = 0; lx < bw; lx++) {
+        const di = (ly * bw + lx) * 4;
+        const gx = bx0 + lx, gy = by0 + ly;
+        const dx = gx - cx, dy = gy - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > rPx) {
+          glass[di] = localBuf[di]; glass[di+1] = localBuf[di+1]; glass[di+2] = localBuf[di+2]; glass[di+3] = localBuf[di+3];
+          continue;
+        }
+        const t = dist / rPx;
+        const dirX = dist > 0.0001 ? dx / dist : 0;
+        const dirY = dist > 0.0001 ? dy / dist : 0;
+
+        // Lens remap, then blend toward the identity map over the outer 12%
+        // of the radius so BOTH position and local magnification match the
+        // untouched outside at t=1 — without this, straight lines crossing
+        // the boundary visibly kink (a real, easy-to-miss lens-remap artifact).
+        let srcT = Math.pow(t, exponent);
+        const edgeStart = 0.88;
+        if (t > edgeStart) {
+          const blend = (t - edgeStart) / (1 - edgeStart);
+          srcT = srcT + (t - srcT) * blend;
+        }
+        const srcDist = srcT * rPx;
+        const sxl = (cx + dirX * srcDist) - bx0;
+        const syl = (cy + dirY * srcDist) - by0;
+        const sxlC = Math.max(0, Math.min(bw - 1, sxl));
+        const sylC = Math.max(0, Math.min(bh - 1, syl));
+
+        let r = bilinearSample(localBuf, bw, bh, sxlC, sylC, 0);
+        let g = bilinearSample(localBuf, bw, bh, sxlC, sylC, 1);
+        let b = bilinearSample(localBuf, bw, bh, sxlC, sylC, 2);
+        const a = bilinearSample(localBuf, bw, bh, sxlC, sylC, 3);
+
+        // Chromatic fringe — applyCA's push-R-out/push-B-in technique,
+        // weighted to only matter near the rim (t≈1), not smeared across
+        // the whole blob interior. Scaled by the blob's own radius (not a
+        // fixed pixel count) so it stays visually proportional regardless
+        // of blob size or source-photo resolution.
+        const fringeWeight = Math.max(0, (t - 0.6) / 0.4);
+        if (fringeWeight > 0 && fringeAmt > 0) {
+          const shift = fringeWeight * fringeAmt * rPx * 0.15;
+          const rxl = Math.max(0, Math.min(bw - 1, sxl + dirX * shift));
+          const ryl = Math.max(0, Math.min(bh - 1, syl + dirY * shift));
+          const bxl = Math.max(0, Math.min(bw - 1, sxl - dirX * shift));
+          const byl = Math.max(0, Math.min(bh - 1, syl - dirY * shift));
+          r = bilinearSample(localBuf, bw, bh, rxl, ryl, 0);
+          b = bilinearSample(localBuf, bw, bh, bxl, byl, 2);
+        }
+
+        glass[di] = clamp(r); glass[di+1] = clamp(g); glass[di+2] = clamp(b); glass[di+3] = a;
+      }
+    }
+
+    const glassOff = document.createElement('canvas');
+    glassOff.width = bw; glassOff.height = bh;
+    const gCtx = glassOff.getContext('2d')!;
+    gCtx.putImageData(new ImageData(glass, bw, bh), 0, 0);
+
+    // Frost — blurred AFTER the lens remap, so the slider reads as a flat px
+    // amount across the blob rather than being stretched non-uniformly by
+    // the lens's own magnification.
+    if (frostPx > 0) {
+      const blurredOff = document.createElement('canvas');
+      blurredOff.width = bw; blurredOff.height = bh;
+      const blCtx = blurredOff.getContext('2d')!;
+      blCtx.filter = `blur(${frostPx}px)`;
+      blCtx.drawImage(glassOff, 0, 0);
+      gCtx.clearRect(0, 0, bw, bh);
+      gCtx.drawImage(blurredOff, 0, 0);
+    }
+
+    // Mask at the SAME rPx as the lens boundary.
+    const maskOff = document.createElement('canvas');
+    maskOff.width = bw; maskOff.height = bh;
+    const mCtx = maskOff.getContext('2d')!;
+    const lcx = cx - bx0, lcy = cy - by0;
+    const grad = mCtx.createRadialGradient(lcx, lcy, 0, lcx, lcy, rPx);
+    grad.addColorStop(0,    'rgba(255,255,255,1.0)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(1,    'rgba(255,255,255,0.0)');
+    mCtx.fillStyle = grad;
+    mCtx.beginPath();
+    mCtx.arc(lcx, lcy, rPx, 0, Math.PI * 2);
+    mCtx.fill();
+
+    gCtx.globalCompositeOperation = 'destination-in';
+    gCtx.drawImage(maskOff, 0, 0);
+    gCtx.globalCompositeOperation = 'source-over';
+
+    const nextCurrent = document.createElement('canvas');
+    nextCurrent.width = w; nextCurrent.height = h;
+    const nCtx = nextCurrent.getContext('2d')!;
+    nCtx.drawImage(current, 0, 0);
+    nCtx.drawImage(glassOff, bx0, by0);
+
+    // Rim highlight — drawn AFTER compositing, unmasked, screen-blended for a
+    // glow (masking it would clip off the outward bloom that reads as a
+    // highlight rather than a flat ring). Radius sits just inside the real
+    // mask edge (rPx), not floating past it.
+    if (rimIntensity > 0) {
+      nCtx.save();
+      nCtx.globalCompositeOperation = 'screen';
+      nCtx.filter = 'blur(3px)';
+      nCtx.strokeStyle = `rgba(255,255,255,${Math.max(0, Math.min(100, rimIntensity)) / 100})`;
+      nCtx.lineWidth = Math.max(1.5, rPx * 0.03);
+      nCtx.beginPath();
+      nCtx.arc(cx, cy, rPx * 0.93, 0, Math.PI * 2);
+      nCtx.stroke();
+      nCtx.restore();
+    }
+
+    current = nextCurrent;
+  }
+
+  return current;
+};
+
 // ─── ProcessedImageCanvas — replaces <img> when any image effect is active ───
 
 interface ProcessedImageProps {
@@ -2482,6 +2938,9 @@ interface ProcessedImageProps {
   reliefEnabled: boolean; reliefAngle: number; reliefDepth: number; reliefColorize: number; reliefTint: string;
   contourEnabled: boolean; contourLevels: number; contourLineColor: string; contourBgColor: string; contourFill: number;
   lowPolyEnabled: boolean; lowPolyPoints: number; lowPolyEdgeBias: number; lowPolyShowEdges: boolean; lowPolyEdgeColor: string; lowPolyStrength: number;
+  voronoiEnabled: boolean; voronoiPoints: number; voronoiEdgeBias: number; voronoiGapWidth: number; voronoiGapColor: string; voronoiStrength: number;
+  kuwaharaEnabled: boolean; kuwaharaRadius: number; kuwaharaStrength: number;
+  kuwaharaSoftness: number; kuwaharaVibrance: number; kuwaharaEdgeAccent: number;
   kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
@@ -2510,6 +2969,7 @@ interface ProcessedImageProps {
   silkscreenInk3: string;
   silkscreenKeyThreshold: number;
   silkscreenStipple: number;
+  bloomEnabled: boolean; bloomThreshold: number; bloomIntensity: number; bloomRadius: number; bloomWarmth: number;
   postcardEnabled: boolean;
   postcardSaturation: number;
   postcardWarmth: number;
@@ -2554,6 +3014,12 @@ interface ProcessedImageProps {
   spotBlurEnabled: boolean;
   spotBlurRadius: number;
   blurSpots: SpotData[];
+  liquidGlassEnabled: boolean;
+  liquidGlassBlobs: SpotData[];
+  liquidGlassRefraction: number;
+  liquidGlassFrost: number;
+  liquidGlassFringe: number;
+  liquidGlassRimIntensity: number;
   onProcessingChange?: (processing: boolean) => void;
 }
 
@@ -2566,6 +3032,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
     lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
+    voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
+    kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
@@ -2577,6 +3045,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
+    bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
     postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
     halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
     halftoneDuotoneEnabled, halftoneBgColor,
@@ -2588,6 +3057,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     pixelSortEnabled, pixelSortThreshold, pixelSortDirection, pixelSortMode,
     motionBlurEnabled, motionBlurType, motionBlurStrength,
     spotBlurEnabled, spotBlurRadius, blurSpots,
+    liquidGlassEnabled, liquidGlassBlobs, liquidGlassRefraction, liquidGlassFrost, liquidGlassFringe, liquidGlassRimIntensity,
     onProcessingChange,
   } = props;
 
@@ -2711,11 +3181,14 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (reliefEnabled)       processed = applyRelief(processed, w, h, reliefAngle, reliefDepth, reliefColorize, reliefTint);
           if (contourEnabled)      processed = applyContour(processed, w, h, contourLevels, contourLineColor, contourBgColor, contourFill);
           if (lowPolyEnabled)      processed = applyLowPoly(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, lowPolyPoints, lowPolyEdgeBias), lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength);
+          if (voronoiEnabled)      processed = applyVoronoi(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, voronoiPoints, voronoiEdgeBias), voronoiGapWidth, voronoiGapColor, voronoiStrength);
+          if (kuwaharaEnabled)     processed = applyKuwahara(processed, w, h, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
           if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#ebf2b5');
           if (postcardEnabled)     processed = applyPostcard(processed, w, h, postcardSaturation, postcardWarmth, postcardLevels, postcardScale);
+          if (bloomEnabled)        processed = applyBloom(processed, w, h, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth);
           if (canvasDitherStyle === 'ascii') {
             processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
           } else if (canvasDitherStyle !== 'none') {
@@ -2743,6 +3216,11 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           // Step 4: spot blur (selective focus compositing)
           if (spotBlurEnabled && blurSpots.length > 0) {
             current = applySpotBlur(current, w, h, spotBlurRadius, blurSpots);
+          }
+
+          // Step 5: liquid glass (per-blob lens/frost/fringe/rim compositing)
+          if (liquidGlassEnabled && liquidGlassBlobs.length > 0) {
+            current = applyLiquidGlass(current, w, h, liquidGlassBlobs, liquidGlassRefraction, liquidGlassFrost, liquidGlassFringe, liquidGlassRimIntensity);
           }
 
           ctx.drawImage(current, 0, 0);
@@ -2775,6 +3253,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
       contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
       lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
+    voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
+    kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
       kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, canvasDitherStyle, canvasDitherScale,
@@ -2785,7 +3265,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
       silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
-      postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
+      bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
+    postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
         halftoneEnabled, halftonePattern, halftoneDotSize, halftoneSpacing, halftoneAngle, halftoneColor, halftoneOpacity, halftoneInvert,
       halftoneDuotoneEnabled, halftoneBgColor,
       effectMaskEnabled, JSON.stringify(effectMaskStrokes), effectMaskFeather, effectMaskInvert,
@@ -2795,7 +3276,8 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       channelSmearEnabled, channelSmearThreshold, channelSmearRDir, channelSmearGDir, channelSmearBDir,
       pixelSortEnabled, pixelSortThreshold, pixelSortDirection, pixelSortMode,
       motionBlurEnabled, motionBlurType, motionBlurStrength,
-      spotBlurEnabled, spotBlurRadius, blurSpots]);
+      spotBlurEnabled, spotBlurRadius, blurSpots,
+      liquidGlassEnabled, liquidGlassBlobs, liquidGlassRefraction, liquidGlassFrost, liquidGlassFringe, liquidGlassRimIntensity]);
 
   return (
     <div ref={wrapRef} className="absolute inset-0">
@@ -2951,6 +3433,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
+    bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
     postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
     effectMaskEnabled, effectMaskStrokes, effectMaskFeather, effectMaskInvert,
     atmosphereStyle, meshColors,
@@ -2974,6 +3457,8 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     reliefEnabled, reliefAngle, reliefDepth, reliefColorize, reliefTint,
     contourEnabled, contourLevels, contourLineColor, contourBgColor, contourFill,
     lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
+    voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
+    kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -2983,6 +3468,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     pixelSortEnabled, pixelSortThreshold, pixelSortDirection, pixelSortMode,
     motionBlurEnabled, motionBlurType, motionBlurStrength,
     spotBlurEnabled, spotBlurRadius, blurSpots,
+    liquidGlassEnabled, liquidGlassBlobs, liquidGlassRefraction, liquidGlassFrost, liquidGlassFringe, liquidGlassRimIntensity,
   } = state;
 
   // Bypass mode — show raw source instantly, no effects
@@ -3002,16 +3488,16 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (layers.some(l => l.imageUrl)) ||
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
     (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
-    (lowPolyEnabled ?? false) ||
+    (lowPolyEnabled ?? false) || (voronoiEnabled ?? false) || (kuwaharaEnabled ?? false) ||
     (kaleidoscopeEnabled ?? false) ||
     (chromaticAberration > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
-    (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) ||
+    (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) || (liquidGlassEnabled ?? false) ||
     (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false) ||
-    (silkscreenEnabled ?? false) || (postcardEnabled ?? false)
+    (silkscreenEnabled ?? false) || (postcardEnabled ?? false) || (bloomEnabled ?? false)
   );
 
   const hasSource = !!(imageUrl || videoUrl);
@@ -3104,6 +3590,9 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 reliefEnabled={reliefEnabled ?? false} reliefAngle={reliefAngle ?? 135} reliefDepth={reliefDepth ?? 55} reliefColorize={reliefColorize ?? 25} reliefTint={reliefTint ?? '#8a8a8a'}
                 contourEnabled={contourEnabled ?? false} contourLevels={contourLevels ?? 8} contourLineColor={contourLineColor ?? '#1a2b1a'} contourBgColor={contourBgColor ?? '#efe9d8'} contourFill={contourFill ?? 40}
                 lowPolyEnabled={lowPolyEnabled ?? false} lowPolyPoints={lowPolyPoints ?? 450} lowPolyEdgeBias={lowPolyEdgeBias ?? 60} lowPolyShowEdges={lowPolyShowEdges ?? false} lowPolyEdgeColor={lowPolyEdgeColor ?? '#000000'} lowPolyStrength={lowPolyStrength ?? 100}
+                voronoiEnabled={voronoiEnabled ?? false} voronoiPoints={voronoiPoints ?? 450} voronoiEdgeBias={voronoiEdgeBias ?? 60} voronoiGapWidth={voronoiGapWidth ?? 2} voronoiGapColor={voronoiGapColor ?? '#0a0a0a'} voronoiStrength={voronoiStrength ?? 100}
+                kuwaharaEnabled={kuwaharaEnabled ?? false} kuwaharaRadius={kuwaharaRadius ?? 4} kuwaharaStrength={kuwaharaStrength ?? 100}
+                kuwaharaSoftness={kuwaharaSoftness ?? 0} kuwaharaVibrance={kuwaharaVibrance ?? 0} kuwaharaEdgeAccent={kuwaharaEdgeAccent ?? 0}
                 kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
@@ -3132,6 +3621,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 silkscreenInk3={silkscreenInk3 ?? '#e0c22e'}
                 silkscreenKeyThreshold={silkscreenKeyThreshold ?? 30}
                 silkscreenStipple={silkscreenStipple ?? 35}
+                bloomEnabled={bloomEnabled ?? false} bloomThreshold={bloomThreshold ?? 60} bloomIntensity={bloomIntensity ?? 70} bloomRadius={bloomRadius ?? 22} bloomWarmth={bloomWarmth ?? 0}
                 postcardEnabled={postcardEnabled ?? false}
                 postcardSaturation={postcardSaturation ?? 45}
                 postcardWarmth={postcardWarmth ?? 18}
@@ -3181,6 +3671,12 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 spotBlurEnabled={spotBlurEnabled ?? false}
                 spotBlurRadius={spotBlurRadius ?? 18}
                 blurSpots={blurSpots ?? []}
+                liquidGlassEnabled={liquidGlassEnabled ?? false}
+                liquidGlassBlobs={liquidGlassBlobs ?? []}
+                liquidGlassRefraction={liquidGlassRefraction ?? 55}
+                liquidGlassFrost={liquidGlassFrost ?? 6}
+                liquidGlassFringe={liquidGlassFringe ?? 45}
+                liquidGlassRimIntensity={liquidGlassRimIntensity ?? 55}
               />
               </div>
             ) : imageUrl ? (

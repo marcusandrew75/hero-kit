@@ -43,11 +43,11 @@ const OpenCta: React.FC<{ onOpen: () => void; small?: boolean }> = ({ onOpen, sm
 
 const EFFECTS_RACK: string[] = [
   'Halftone', 'Duotone Halftone', 'Risograph', 'CMYK Separation', 'Silkscreen', 'Postcard',
-  'Gradient Map', 'Relief', 'Contour', 'Low-Poly', 'Kaleidoscope',
+  'Gradient Map', 'Relief', 'Contour', 'Low-Poly', 'Voronoi', 'Kaleidoscope', 'Kuwahara',
   'Bayer Dither', 'Floyd–Steinberg', 'Atkinson', 'ASCII Dither',
-  'Duotone Dither', 'Color Grade', 'Split Tone', 'Edge Glow',
+  'Duotone Dither', 'Color Grade', 'Split Tone', 'Edge Glow', 'Bloom',
   'Image Glitch', 'Dispersion', 'Displacement Warp', 'Channel Smear',
-  'Pixel Sort', 'Motion Blur', 'Spot Blur', 'Chromatic Aberration',
+  'Pixel Sort', 'Motion Blur', 'Spot Blur', 'Liquid Glass', 'Chromatic Aberration',
   'Effect Mask', 'Film Grain', 'Vignette', 'Pattern Overlays',
 ];
 
@@ -237,7 +237,7 @@ const LandingPage: React.FC<{ onOpen: () => void }> = ({ onOpen }) => {
         <div className="landing-reveal">
           <SectionTag number="03" label="The full rack" />
           <h2 className="text-[30px] md:text-[42px] font-bold leading-tight mt-5 mb-4 max-w-2xl" style={GROTESK}>
-            Thirty-one modules.<br />One pipeline.
+            Thirty-five modules.<br />One pipeline.
           </h2>
           <p className="text-[15px] md:text-[16px] leading-relaxed mb-10 max-w-2xl" style={{ color: T.muted }}>
             Run as many at once as your idea needs — each effect is computed in sequence, so

@@ -11,12 +11,14 @@
   "dependencies": {
     "@paper-design/shaders-react": "^0.0.77",
     "@vercel/analytics": "^2.0.1",
+    "d3-delaunay": "^6.0.4",
     "delaunator": "^5.1.0",
     "html-to-image": "1.11.11",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },
   "devDependencies": {
+    "@types/d3-delaunay": "^6.0.4",
     "@types/node": "^22.14.0",
     "@vercel/node": "^5.8.22",
     "@vitejs/plugin-react": "^5.0.0",

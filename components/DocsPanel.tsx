@@ -131,6 +131,36 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.5', date: '21 Jul 2026',
+    items: [
+      'Added: Softness, Vibrance and Edge Accent controls to Kuwahara — Softness rounds off the blocky quadrant edges toward a smoother blend, Vibrance punches up color on the painted result, Edge Accent darkens along real photo edges for more defined brush-stroke boundaries. All default to off, so the existing Kuwahara look is unchanged unless you opt in',
+    ],
+  },
+  {
+    version: '4.4', date: '21 Jul 2026',
+    items: [
+      'Added: Kuwahara — classic oil-painting stylization. Repaints each pixel with the mean colour of its most uniform local neighbourhood, so flat regions smooth into brush-stroke patches while edges stay sharp — built entirely from the photo\'s own colors. Joins Relief, Contour, Low-Poly, Voronoi and Kaleidoscope in Structure & Form, and the Dice pool',
+    ],
+  },
+  {
+    version: '4.3', date: '21 Jul 2026',
+    items: [
+      'Added: Liquid Glass — places a glass blob that bends the image behind it like a lens, with frosted blur inside, chromatic fringing at the rim and a glowing highlight edge. Uses the same click-to-place mini-map as Spot Blur. Joins Motion Blur, Spot Blur, Edge Glow and Bloom in Blur & Light, and the Dice pool',
+    ],
+  },
+  {
+    version: '4.2', date: '21 Jul 2026',
+    items: [
+      'Added: Voronoi — shatters the image into an irregular faceted mosaic, the geometric dual of Low-Poly\'s triangles, with cracked-glass gaps between shards. Joins Relief, Contour, Low-Poly and Kaleidoscope in Structure & Form, and the Dice pool',
+    ],
+  },
+  {
+    version: '4.1', date: '21 Jul 2026',
+    items: [
+      'Added: Bloom — extracts the photo\'s own bright highlights and blooms them into a soft glow, carrying their real colour rather than a fixed tint. Joins Motion Blur, Spot Blur and Edge Glow in Blur & Light, and the Dice pool',
+    ],
+  },
+  {
     version: '4.0', date: '18 Jul 2026',
     items: [
       'Added: Low-Poly — rebuilds the image from flat-shaded triangles, biased toward real edges so facets land on the photo\'s actual silhouette rather than an even mosaic. Joins Relief, Contour and Kaleidoscope in Structure & Form, and the Dice pool',

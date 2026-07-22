@@ -899,6 +899,9 @@ const LayersSection: React.FC<{
                 <Row label="Opacity">
                   <HwSlider value={Math.round(layer.opacity * 100)} min={1} max={100} onChange={v => update(layer.id, { opacity: v / 100 })} />
                 </Row>
+                <Row label="Sharpen">
+                  <HwSlider value={layer.sharpen ?? 0} min={0} max={100} onChange={v => update(layer.id, { sharpen: v })} />
+                </Row>
                 {layer.imageUrl && (
                   <button
                     onClick={() => onEditLayer(editingLayerId === layer.id ? null : layer.id)}
@@ -1619,6 +1622,10 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             <Row label="Blur">
               <HwSlider value={state.imageBlur} min={0} max={20} step={0.5} decimals={1}
                 onChange={v => set({ imageBlur: v })} />
+            </Row>
+            <Row label="Sharpen">
+              <HwSlider value={state.imageSharpen} min={0} max={100}
+                onChange={v => set({ imageSharpen: v })} />
             </Row>
             <Row label="Flip">
               <div className="flex gap-2">

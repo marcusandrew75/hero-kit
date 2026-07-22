@@ -57,6 +57,7 @@ export interface BackgroundState {
   // Image / video processing
   imageFilter: ImageFilter;
   imageBlur: number;
+  imageSharpen: number;        // 0–100, unsharp-mask amount on the primary image only
   imageMask: ImageMask;
   imageOpacity: number;
   imageFlipH: boolean;
@@ -332,6 +333,7 @@ export interface ImageLayer {
   attribution?: ImageAttribution;
   blendMode: LayerBlendMode;
   opacity: number; // 0–1
+  sharpen?: number; // 0–100, unsharp-mask amount on this layer's own pixels only
   // Position/size within the canvas — all optional and default to a full
   // 0,0,1,1 box (today's full-bleed behavior) so layers saved before this
   // field existed render exactly as they always have.

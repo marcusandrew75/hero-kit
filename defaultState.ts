@@ -10,6 +10,7 @@ export const DEFAULT: BackgroundState = {
   maskColor: '#0a0a0a',
   imageFilter: 'none',
   imageBlur: 0,
+  imageSharpen: 0,
   imageMask: 'none',
   imageOpacity: 1,
   imageFlipH: false,

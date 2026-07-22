@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.6', date: '22 Jul 2026',
+    items: [
+      'Added: Sharpen — a simple unsharp-mask control for the primary image (Background panel) and, independently, for each Layer (Layers panel), so a layered composite can have each image sharpened on its own rather than one setting affecting everything at once',
+    ],
+  },
+  {
     version: '4.5', date: '21 Jul 2026',
     items: [
       'Added: Softness, Vibrance and Edge Accent controls to Kuwahara — Softness rounds off the blocky quadrant edges toward a smoother blend, Vibrance punches up color on the painted result, Edge Accent darkens along real photo edges for more defined brush-stroke boundaries. All default to off, so the existing Kuwahara look is unchanged unless you opt in',

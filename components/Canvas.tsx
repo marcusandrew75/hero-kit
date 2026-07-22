@@ -1786,6 +1786,49 @@ const applyBloom = (
   return new Uint8ClampedArray(cCtx.getImageData(0, 0, w, h).data);
 };
 
+// ─── Sharpen ────────────────────────────────────────────────────────────────
+// Classic unsharp mask: blur a copy, then push the original away from the
+// blur along its own detail — same canvas-blur-internally-but-array-in/out
+// recipe as applyBloom above. Applied per-SOURCE (primary image, each layer)
+// rather than as a Step-2 whole-canvas effect — see the two call sites below,
+// both inserted right where that source's own offscreen canvas already holds
+// just its own pixels, before it's composited with anything else. A single
+// fixed internal blur radius, no separate Radius control — "a simple Sharpen
+// control" was the ask, and one Amount slider is the whole surface.
+
+const applySharpen = (
+  data: Uint8ClampedArray, w: number, h: number, amount: number,
+): Uint8ClampedArray => {
+  const amt = Math.max(0, Math.min(100, amount)) / 100;
+  if (amt <= 0) return new Uint8ClampedArray(data);
+
+  const blurRadius = 1.6;
+  const srcCanvas = document.createElement('canvas');
+  srcCanvas.width = w; srcCanvas.height = h;
+  const srcCtx = srcCanvas.getContext('2d')!;
+  srcCtx.putImageData(new ImageData(new Uint8ClampedArray(data), w, h), 0, 0);
+
+  const blurCanvas = document.createElement('canvas');
+  blurCanvas.width = w; blurCanvas.height = h;
+  const blurCtx = blurCanvas.getContext('2d')!;
+  blurCtx.filter = `blur(${blurRadius}px)`;
+  blurCtx.drawImage(srcCanvas, 0, 0);
+  blurCtx.filter = 'none';
+  const blurred = blurCtx.getImageData(0, 0, w, h).data;
+
+  // Tuned so 100 gives a strong, obviously sharper result without the
+  // haloing unsharp masking produces if pushed further unchecked.
+  const strength = amt * 2.2;
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    out[i]   = clamp(data[i]   + (data[i]   - blurred[i])   * strength);
+    out[i+1] = clamp(data[i+1] + (data[i+1] - blurred[i+1]) * strength);
+    out[i+2] = clamp(data[i+2] + (data[i+2] - blurred[i+2]) * strength);
+    out[i+3] = data[i+3];
+  }
+  return out;
+};
+
 // ─── Split Tone ───────────────────────────────────────────────────────────────
 // Maps shadow tones to one color and highlight tones to another
 
@@ -2943,6 +2986,7 @@ interface ProcessedImageProps {
   kuwaharaSoftness: number; kuwaharaVibrance: number; kuwaharaEdgeAccent: number;
   kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
+  imageSharpen: number;
   canvasDitherStyle: 'none' | 'bayer' | 'floyd-steinberg' | 'atkinson' | 'ascii';
   canvasDitherScale: number;
   ditherDuotoneEnabled: boolean;
@@ -3037,6 +3081,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
+    imageSharpen,
     canvasDitherStyle, canvasDitherScale,
     ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
     ditherDuotoneLevels, ditherDuotoneInvert,
@@ -3105,6 +3150,15 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           drawObjectCover(offCtx, img, w, h);
           offCtx.restore();
 
+          // Primary image's own sharpen — applied here, before anything else
+          // composites on top, since at this exact point `off` holds only
+          // the primary image (already flipped/cover-fit) and nothing else.
+          if (imageSharpen > 0) {
+            const primaryData = offCtx.getImageData(0, 0, w, h);
+            const sharpenedPrimary = applySharpen(primaryData.data, w, h, imageSharpen);
+            offCtx.putImageData(new ImageData(sharpenedPrimary, w, h), 0, 0);
+          }
+
           // Blend additional layers on top — each rendered into its own
           // offscreen box first (so its eraser mask, if any, only ever
           // affects that layer's own pixels), then composited onto the main
@@ -3123,6 +3177,15 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
             lCanvas.height = Math.max(1, Math.round(lh));
             const lCtx = lCanvas.getContext('2d')!;
             drawObjectCoverRect(lCtx, layerImgs[i], 0, 0, lCanvas.width, lCanvas.height);
+
+            // This layer's own sharpen — before the mask erase below, so it
+            // only ever sees this layer's own pixels, same reasoning as the
+            // primary image's sharpen above.
+            if (layer.sharpen) {
+              const layerData = lCtx.getImageData(0, 0, lCanvas.width, lCanvas.height);
+              const sharpenedLayer = applySharpen(layerData.data, lCanvas.width, lCanvas.height, layer.sharpen);
+              lCtx.putImageData(new ImageData(sharpenedLayer, lCanvas.width, lCanvas.height), 0, 0);
+            }
 
             // Step 2: erase painted regions from this layer's own alpha —
             // strokes are relative to the layer's own box, so they move/scale
@@ -3257,7 +3320,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
       kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
-      caStrength, canvasDitherStyle, canvasDitherScale,
+      caStrength, imageSharpen, canvasDitherStyle, canvasDitherScale,
       ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
       ditherDuotoneLevels, ditherDuotoneInvert,
       ditherAsciiCharSize, ditherAsciiBrightness,
@@ -3424,7 +3487,7 @@ interface CanvasProps {
 const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessingChange }) => {
   const {
     bgColor, maskColor, imageUrl, videoUrl,
-    imageFilter, imageBlur, imageMask, imageOpacity, imageFlipH, imageFlipV, tintColor, chromaticAberration,
+    imageFilter, imageBlur, imageSharpen, imageMask, imageOpacity, imageFlipH, imageFlipV, tintColor, chromaticAberration,
     ditherStyle, ditherScale,
     ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor,
     ditherDuotoneLevels, ditherDuotoneInvert,
@@ -3490,7 +3553,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
     (lowPolyEnabled ?? false) || (voronoiEnabled ?? false) || (kuwaharaEnabled ?? false) ||
     (kaleidoscopeEnabled ?? false) ||
-    (chromaticAberration > 0) ||
+    (chromaticAberration > 0) || (imageSharpen > 0) ||
     (ditherStyle !== 'none') ||
     (imageGlitchEnabled ?? false) ||
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
@@ -3595,6 +3658,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 kuwaharaSoftness={kuwaharaSoftness ?? 0} kuwaharaVibrance={kuwaharaVibrance ?? 0} kuwaharaEdgeAccent={kuwaharaEdgeAccent ?? 0}
                 kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
+                imageSharpen={imageSharpen ?? 0}
                 canvasDitherStyle={ditherStyle === 'none' ? 'none' : (ditherStyle as 'bayer'|'floyd-steinberg'|'atkinson'|'ascii')}
                 canvasDitherScale={ditherScale ?? 4}
                 ditherDuotoneEnabled={ditherDuotoneEnabled ?? false}

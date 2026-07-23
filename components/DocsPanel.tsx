@@ -447,6 +447,18 @@ const DocsPanel: React.FC<Props> = ({ onClose, initialTab = 'about' }) => {
                 <i className="ph ph-x-logo text-sm" />
                 @mrcndrw
               </a>
+              <p className="text-[10.5px] leading-relaxed" style={{ color: T.dim }}>
+                Lightning bolt icon by{' '}
+                <a
+                  href="https://thenounproject.com/creator/artmoney/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: T.muted, textDecoration: 'underline' }}
+                >
+                  artmoney
+                </a>{' '}
+                from Noun Project.
+              </p>
             </div>
           )}
 

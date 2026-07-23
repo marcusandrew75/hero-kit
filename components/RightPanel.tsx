@@ -1415,18 +1415,18 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           {/* Icon-only buttons to keep the row compact */}
           <div className="flex items-center gap-1 shrink-0 ml-3">
             <button onClick={onResetEffects} title="Reset effects"
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all text-[11px] font-medium whitespace-nowrap"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
               style={{ color: T.muted }}
               onMouseEnter={e => (e.currentTarget.style.color = T.text)}
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-              <i className="ph ph-arrow-counter-clockwise text-sm" /> Reset
+              <i className="ph ph-arrow-counter-clockwise text-base" />
             </button>
             <button onClick={onOpenLooks} title="Looks"
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all text-[11px] font-medium whitespace-nowrap"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
               style={{ color: T.muted }}
               onMouseEnter={e => (e.currentTarget.style.color = T.text)}
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-              <i className="ph ph-bookmark-simple text-sm" /> Looks
+              <i className="ph ph-bookmark-simple text-base" />
             </button>
             <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
               className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"

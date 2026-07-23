@@ -1301,13 +1301,14 @@ interface RightPanelProps {
   onChange: (patch: Partial<BackgroundState>) => void;
   onOpenLooks: () => void;
   onResetEffects: () => void;
+  onOpenAccount: () => void;
   editingLayerId: string | null;
   onEditLayer: (id: string | null) => void;
   mobile?: boolean;
   onExportPhaseChange?: (phase: 'idle' | 'winding' | 'processing') => void;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, onOpenAccount, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
   // Effect-family group collapse — keyed open map, all collapsed on load.
   // In-memory only (resets per session), like the other transient panel UI.
@@ -1426,6 +1427,13 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               onMouseEnter={e => (e.currentTarget.style.color = T.text)}
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
               <i className="ph ph-bookmark-simple text-sm" /> Looks
+            </button>
+            <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-user-circle text-base" />
             </button>
             {/* Icon-only — keeps the row compact. Info icon rather than a hamburger:
                 a hamburger signals "navigation drawer," but this opens a modal

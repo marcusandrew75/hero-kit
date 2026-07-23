@@ -16,6 +16,10 @@ import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 import { rollDice } from './dice';
 import { EASTER_EGGS, EasterEgg } from './easterEggs';
+import PaywallPanel from './components/PaywallPanel';
+import { supabase } from './services/supabaseClient';
+import { fetchEntitlement, getCachedEntitlement, FREE_ENTITLEMENT, Entitlement } from './services/entitlement';
+import type { User } from '@supabase/supabase-js';
 
 export { DEFAULT };
 
@@ -94,6 +98,27 @@ const App: React.FC = () => {
     catch { return []; }
   });
   const [showLooks, setShowLooks]         = useState(false);
+  // Auth/entitlement — sibling state, deliberately NOT part of BackgroundState
+  // (which is pure design-state, serialized into Looks/History/share-links).
+  // entitlement starts from the cached last-known plan (see services/
+  // entitlement.ts) so the export/Looks gates don't flash "free" for a frame
+  // before the real Supabase round-trip resolves on load.
+  const [showPaywall, setShowPaywall]     = useState(false);
+  const [user, setUser]                   = useState<User | null>(null);
+  const [entitlement, setEntitlement]     = useState<Entitlement>(getCachedEntitlement());
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  useEffect(() => {
+    if (!user) { setEntitlement(FREE_ENTITLEMENT); return; }
+    let cancelled = false;
+    fetchEntitlement(user.id).then(e => { if (!cancelled) setEntitlement(e); });
+    return () => { cancelled = true; };
+  }, [user]);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const isMobile = useIsMobile();
   const { offsetTop: viewportOffsetTop, height: viewportHeight } = useVisualViewport();
@@ -704,7 +729,7 @@ const App: React.FC = () => {
           animation so no per-frame repaint. */}
       {isMobile ? (
         <BottomSheet state={sheetState} onStateChange={setSheetState}>
-          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
+          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)}
             editingLayerId={editingLayerId} onEditLayer={handleEditLayer} mobile
             onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
         </BottomSheet>
@@ -713,7 +738,7 @@ const App: React.FC = () => {
           style={{ width: isFullscreen ? 0 : 310, transition: 'width 280ms cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0 }}
         >
           <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
-            <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects}
+            <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)}
               editingLayerId={editingLayerId} onEditLayer={handleEditLayer}
               onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
           </div>
@@ -728,6 +753,13 @@ const App: React.FC = () => {
           onClose={() => setShowLooks(false)}
         />
       )}
+
+      <PaywallPanel
+        open={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        user={user}
+        entitlement={entitlement}
+      />
 
       {/* Temporary viewport debug readout — only shown when ?debug is in the
           URL, so real users never see it. Lets a real iOS device report the

@@ -146,7 +146,10 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
               )}
 
               <p className="text-[10px] leading-relaxed mt-2" style={{ color: T.dim }}>
-                By continuing, you agree to HeroKit's Terms and Privacy Policy.
+                By continuing, you agree to HeroKit's{' '}
+                <a href="/terms" target="_blank" rel="noreferrer" style={{ color: T.muted, textDecoration: 'underline' }}>Terms</a>{' '}
+                and{' '}
+                <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: T.muted, textDecoration: 'underline' }}>Privacy Policy</a>.
               </p>
             </div>
           ) : (

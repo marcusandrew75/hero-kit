@@ -8,6 +8,8 @@ import CanvasDropZone from './components/CanvasDropZone';
 import LayerTransformOverlay from './components/LayerTransformOverlay';
 import LandingPage from './components/LandingPage';
 import TeamsPage from './components/TeamsPage';
+import PrivacyPage from './components/PrivacyPage';
+import TermsPage from './components/TermsPage';
 import BottomSheet, { PEEK_HEIGHT } from './components/BottomSheet';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useVisualViewport } from './hooks/useVisualViewport';
@@ -372,10 +374,17 @@ const App: React.FC = () => {
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
-  // /teams — B2B marketing page (served via the vercel.json SPA rewrite;
-  // Vite's dev server falls back to index.html for unknown paths natively).
+  // /teams, /privacy, /terms — static pages (served via the vercel.json SPA
+  // rewrite; Vite's dev server falls back to index.html for unknown paths
+  // natively).
   if (window.location.pathname === '/teams') {
     return <TeamsPage />;
+  }
+  if (window.location.pathname === '/privacy') {
+    return <PrivacyPage />;
+  }
+  if (window.location.pathname === '/terms') {
+    return <TermsPage />;
   }
 
   if (showLanding) {

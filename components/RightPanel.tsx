@@ -8,6 +8,7 @@ import EffectMaskPad from './EffectMaskPad';
 import DocsPanel from './DocsPanel';
 import { generateBackground } from '../services/generate';
 import { useKeyboardOpen } from '../hooks/useKeyboardOpen';
+import { Entitlement, isPro } from '../services/entitlement';
 import {
   HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T, TabBar,
 } from './ui/HardwareControls';
@@ -1302,13 +1303,14 @@ interface RightPanelProps {
   onOpenLooks: () => void;
   onResetEffects: () => void;
   onOpenAccount: () => void;
+  entitlement: Entitlement;
   editingLayerId: string | null;
   onEditLayer: (id: string | null) => void;
   mobile?: boolean;
   onExportPhaseChange?: (phase: 'idle' | 'winding' | 'processing') => void;
 }
 
-const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, onOpenAccount, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
+const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, onOpenAccount, entitlement, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
   // Effect-family group collapse — keyed open map, all collapsed on load.
   // In-memory only (resets per session), like the other transient panel UI.
@@ -1322,6 +1324,9 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const [genPrompt, setGenPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError]   = useState<string | null>(null);
+  // Account icon hidden on the live domain while the Pro purchase flow is
+  // still being verified locally — remove this check once Stage 6 is done.
+  const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
   const set = (patch: Partial<BackgroundState>) => onChange(patch);
 
   const handleGenerate = async () => {
@@ -1351,6 +1356,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const handleExport = async () => {
     const node = document.getElementById('heroken-canvas');
     if (!node) return;
+    if (resolution !== '1x' && !isPro(entitlement)) { onOpenAccount(); return; }
     setExporting(true);
     onExportPhaseChange?.('winding');
     try {
@@ -1428,13 +1434,15 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
               <i className="ph ph-bookmark-simple text-base" />
             </button>
-            <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
-              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-              style={{ color: T.muted }}
-              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-              <i className="ph ph-user-circle text-base" />
-            </button>
+            {isLocalDev && (
+              <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
+                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+                style={{ color: T.muted }}
+                onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+                onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+                <i className="ph ph-user-circle text-base" />
+              </button>
+            )}
             {/* Icon-only — keeps the row compact. Info icon rather than a hamburger:
                 a hamburger signals "navigation drawer," but this opens a modal
                 (About / Effects Guide / Changelog) — info is the honest affordance. */}
@@ -1469,7 +1477,11 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
           </div>
           <Row label="Resolution">
             <HwSegment
-              options={[{ id:'1x',label:'1×' },{ id:'2x',label:'2×' },{ id:'4x',label:'4×' }]}
+              options={[
+                { id:'1x', label:'1×' },
+                { id:'2x', label: isPro(entitlement) ? '2×' : '2× · Pro' },
+                { id:'4x', label: isPro(entitlement) ? '4×' : '4× · Pro' },
+              ]}
               value={resolution} onChange={v => setResolution(v as ExportResolution)}
             />
           </Row>

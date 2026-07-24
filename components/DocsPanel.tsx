@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.7', date: '24 Jul 2026',
+    items: [
+      'Added: HeroKit Pro — a one-time unlock (sign in with Google or email) for 2×/4× export and unlimited synced Looks. Free plan stays fully usable at 1× export and up to 3 saved Looks',
+    ],
+  },
+  {
     version: '4.6', date: '22 Jul 2026',
     items: [
       'Added: Sharpen — a simple unsharp-mask control for the primary image (Background panel) and, independently, for each Layer (Layers panel), so a layered composite can have each image sharpened on its own rather than one setting affecting everything at once',

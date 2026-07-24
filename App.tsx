@@ -762,7 +762,7 @@ const App: React.FC = () => {
           animation so no per-frame repaint. */}
       {isMobile ? (
         <BottomSheet state={sheetState} onStateChange={setSheetState}>
-          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)}
+          <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)} entitlement={entitlement}
             editingLayerId={editingLayerId} onEditLayer={handleEditLayer} mobile
             onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
         </BottomSheet>
@@ -771,7 +771,7 @@ const App: React.FC = () => {
           style={{ width: isFullscreen ? 0 : 310, transition: 'width 280ms cubic-bezier(0.4,0,0.2,1)', overflow: 'hidden', flexShrink: 0 }}
         >
           <div style={{ width: 310, height: '100%', transform: 'translateZ(0)' }}>
-            <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)}
+            <RightPanel state={state} onChange={handleChange} onOpenLooks={() => setShowLooks(true)} onResetEffects={handleResetEffects} onOpenAccount={() => setShowPaywall(true)} entitlement={entitlement}
               editingLayerId={editingLayerId} onEditLayer={handleEditLayer}
               onExportPhaseChange={EXPORT_FLOURISH_ENABLED ? handleExportPhaseChange : undefined} />
           </div>
@@ -782,8 +782,10 @@ const App: React.FC = () => {
       {showLooks && (
         <LooksPanel
           state={state}
+          entitlement={entitlement}
           onApply={handleApplyLook}
           onClose={() => setShowLooks(false)}
+          onUpgrade={() => setShowPaywall(true)}
         />
       )}
 

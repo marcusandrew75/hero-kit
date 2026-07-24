@@ -3,6 +3,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BackgroundState } from '../types';
 import { DEFAULT } from '../defaultState';
 import { T, TabBar } from './ui/HardwareControls';
+import { Entitlement, isPro } from '../services/entitlement';
+
+const FREE_LOOKS_LIMIT = 3;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,17 +79,19 @@ const relativeTime = (ts: number): string => {
 
 interface Props {
   state: BackgroundState;
+  entitlement: Entitlement;
   onApply: (patch: Partial<BackgroundState>) => void;
   onClose: () => void;
+  onUpgrade: () => void;
 }
 
-const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
+const LooksPanel: React.FC<Props> = ({ state, entitlement, onApply, onClose, onUpgrade }) => {
   const [looks,   setLooks]   = useState<SavedLook[]>(loadLooks);
   const [history, setHistory] = useState<HistoryEntry[]>(loadHistory);
   const [name,    setName]    = useState('');
   const [copied,  setCopied]  = useState<string | null>(null);
   const [tab,     setTab]     = useState<'looks' | 'history'>('looks');
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<{ message: string; upgrade?: boolean } | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   // Refresh history when tab is opened
@@ -96,6 +101,13 @@ const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
 
   // ── Save look ──────────────────────────────────────────────────────────────
   const saveLook = () => {
+    if (!isPro(entitlement) && looks.length >= FREE_LOOKS_LIMIT) {
+      setSaveError({
+        message: `Free plan is limited to ${FREE_LOOKS_LIMIT} saved Looks — upgrade to Pro for unlimited.`,
+        upgrade: true,
+      });
+      return;
+    }
     const look: SavedLook = {
       id: crypto.randomUUID(),
       name: name.trim() || `Look ${looks.length + 1}`,
@@ -111,7 +123,7 @@ const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
       setName('');
       setSaveError(null);
     } catch {
-      setSaveError('Storage is full — delete a few old Looks or clear History, then try again.');
+      setSaveError({ message: 'Storage is full — delete a few old Looks or clear History, then try again.' });
     }
   };
 
@@ -220,10 +232,16 @@ const LooksPanel: React.FC<Props> = ({ state, onApply, onClose }) => {
             <div className="flex items-start gap-2 rounded-lg px-3 py-2.5" style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)' }}>
               <i className="ph ph-warning-circle text-sm shrink-0 mt-0.5" style={{ color: '#b91c1c' }} />
               <div className="flex-1">
-                <p className="text-[11px] leading-relaxed" style={{ color: '#991b1b' }}>{saveError}</p>
-                <button onClick={clearHistory} className="text-[10px] font-semibold underline underline-offset-2 mt-1" style={{ color: '#b91c1c' }}>
-                  Clear History now
-                </button>
+                <p className="text-[11px] leading-relaxed" style={{ color: '#991b1b' }}>{saveError.message}</p>
+                {saveError.upgrade ? (
+                  <button onClick={onUpgrade} className="text-[10px] font-semibold underline underline-offset-2 mt-1" style={{ color: '#b91c1c' }}>
+                    Upgrade to Pro
+                  </button>
+                ) : (
+                  <button onClick={clearHistory} className="text-[10px] font-semibold underline underline-offset-2 mt-1" style={{ color: '#b91c1c' }}>
+                    Clear History now
+                  </button>
+                )}
               </div>
             </div>
           )}

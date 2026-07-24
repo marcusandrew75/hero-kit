@@ -26,7 +26,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const sep = returnUrl.includes('?') ? '&' : '?';
+  // Building with the URL API (not string concat) so `checkout=` always
+  // lands as a real query param — returnUrl can carry a leftover empty
+  // `#` from the Supabase OAuth redirect (or a future `#look=` hash),
+  // and naive concatenation would land the param inside that fragment
+  // instead of the query string, where App.tsx's own detector looks.
+  const withCheckoutParam = (value: 'success' | 'cancel'): string => {
+    const url = new URL(returnUrl);
+    url.searchParams.set('checkout', value);
+    return url.toString();
+  };
 
   try {
     const stripe = new Stripe(secretKey);
@@ -35,8 +44,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       client_reference_id: userId,
       customer_email: email,
-      success_url: `${returnUrl}${sep}checkout=success`,
-      cancel_url: `${returnUrl}${sep}checkout=cancel`,
+      success_url: withCheckoutParam('success'),
+      cancel_url: withCheckoutParam('cancel'),
     });
     res.status(200).json({ url: session.url });
   } catch (err) {

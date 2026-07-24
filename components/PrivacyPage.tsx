@@ -5,9 +5,10 @@ import { MONO, GROTESK } from './landing/shared';
 // ─── Privacy Policy ─────────────────────────────────────────────────────────
 // Plain-language, written to accurately describe what HeroKit actually does
 // today (client-side effects pipeline, Pexels/Unsplash proxy search, local-
-// only Looks/History, Supabase auth) plus the Pro tier being built (Stripe
-// billing, synced Looks) — not generic boilerplate. Not a substitute for
-// real legal review once this is actually load-bearing.
+// only Looks/History, Supabase auth) plus the Pro tier (one-time Stripe
+// payment) — not generic boilerplate. Note: Looks are local-only today; there
+// is no cross-device sync. Not a substitute for real legal review once this is
+// actually load-bearing.
 
 const TITLE = 'Privacy Policy — HeroKit';
 const LAST_UPDATED = '22 July 2026';
@@ -49,8 +50,8 @@ const PrivacyPage: React.FC = () => {
           <p>
             HeroKit's core tool runs entirely in your browser — the photo you upload and every effect you apply never
             leaves your device. We don't require an account to use it. Signing in is only needed to unlock Pro features
-            (higher-resolution export, Looks synced across your devices), and at that point we store the minimum needed
-            to run that: your email, your plan status, and — if you subscribe — billing details handled by Stripe, not us.
+            (higher-resolution export, WebP export and unlimited saved Looks), and at that point we store the minimum needed to run
+            that: your email, your plan status, and — when you buy Pro — billing details handled by Stripe, not us.
           </p>
         </Section>
 
@@ -75,14 +76,14 @@ const PrivacyPage: React.FC = () => {
         <Section heading="Signing in and Pro accounts">
           <p>
             Signing in is handled by Supabase, our authentication provider, via Google sign-in or an emailed sign-in
-            link. We store your email address, your account identifier, and — once billing is live — your plan status
-            and Stripe customer/subscription identifiers, so we know what you're entitled to. We do not see or store
-            your card details; those are handled entirely by Stripe.
+            link. We store your email address, your account identifier, your plan status, and your Stripe customer
+            identifier, so we know what you're entitled to. We do not see or store your card details; those are handled
+            entirely by Stripe.
           </p>
           <p>
-            If you're on the free plan, none of your design work is required to be sent to us. If you upgrade, your
-            saved Looks may be synced to our database so they follow you across devices — that's the entire purpose
-            of that sync, and it's limited to the Look data itself (your effect settings), not your source photos.
+            Your saved Looks stay in your browser's local storage — on the free plan and on Pro alike, we don't upload
+            them to our servers. If we ever add optional cross-device sync, we'll update this policy first, and it would
+            cover only the Look data itself (your effect settings), never your source photos.
           </p>
         </Section>
 

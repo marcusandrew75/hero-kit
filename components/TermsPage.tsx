@@ -63,10 +63,9 @@ const TermsPage: React.FC = () => {
 
         <Section heading="Pro accounts and billing">
           <p>
-            Pro unlocks higher-resolution export and Looks synced across your devices, via a monthly subscription,
-            annual subscription, or one-time lifetime purchase, processed by Stripe. Subscriptions renew automatically
-            until cancelled; you can cancel any time and retain access through the end of the period you've already
-            paid for. Lifetime purchases are a one-time payment with no recurring charge and no expiry.
+            Pro unlocks early access to new effects, higher-resolution export (2× and 4×), WebP export, and unlimited
+            saved Looks, for a single one-time payment of $29, processed by Stripe. It's a one-time purchase — there's no subscription, no recurring charge, and
+            no expiry. You pay once and keep Pro.
           </p>
           <p>
             Refunds are handled case-by-case — email <a href="mailto:support@herokit.app" style={{ color: T.text }}>support@herokit.app</a> if

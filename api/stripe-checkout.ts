@@ -4,7 +4,19 @@ import Stripe from 'stripe';
 // HeroKit Pro is a single one-time unlock — no subscription tiers, so
 // Checkout mode is always 'payment'. See api/stripe-webhook.ts for the
 // other half (grants the entitlement once Stripe confirms payment).
-const PRICE_ID = 'price_1TwRQKRnRYLDY5vDRWWgFBSw';
+//
+// ui_mode 'embedded' + redirect_on_completion 'never' keeps Stripe's card
+// form inside our own modal (an iframe) and returns control to the client
+// via the SDK's onComplete callback instead of navigating the page away —
+// so the whole flow stays in the paywall modal. The client then polls the
+// entitlement (the webhook is the source of truth) and shows its own
+// success state.
+//
+// The Price ID comes from STRIPE_PRICE_ID so test/live can differ per
+// environment (a live secret key can't use a test price and vice-versa).
+// Falls back to the test price for local dev convenience — PRODUCTION MUST
+// set STRIPE_PRICE_ID to the live price ID.
+const PRICE_ID = process.env.STRIPE_PRICE_ID || 'price_1TwRQKRnRYLDY5vDRWWgFBSw';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -20,34 +32,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
   const email = typeof req.body?.email === 'string' ? req.body.email : undefined;
-  const returnUrl = typeof req.body?.returnUrl === 'string' ? req.body.returnUrl : '';
-  if (!userId || !returnUrl) {
-    res.status(400).json({ error: 'userId and returnUrl are required.' });
+  if (!userId) {
+    res.status(400).json({ error: 'userId is required.' });
     return;
   }
-
-  // Building with the URL API (not string concat) so `checkout=` always
-  // lands as a real query param — returnUrl can carry a leftover empty
-  // `#` from the Supabase OAuth redirect (or a future `#look=` hash),
-  // and naive concatenation would land the param inside that fragment
-  // instead of the query string, where App.tsx's own detector looks.
-  const withCheckoutParam = (value: 'success' | 'cancel'): string => {
-    const url = new URL(returnUrl);
-    url.searchParams.set('checkout', value);
-    return url.toString();
-  };
 
   try {
     const stripe = new Stripe(secretKey);
     const session = await stripe.checkout.sessions.create({
+      ui_mode: 'embedded_page',
       mode: 'payment',
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       client_reference_id: userId,
       customer_email: email,
-      success_url: withCheckoutParam('success'),
-      cancel_url: withCheckoutParam('cancel'),
+      redirect_on_completion: 'never',
     });
-    res.status(200).json({ url: session.url });
+    res.status(200).json({ clientSecret: session.client_secret });
   } catch (err) {
     console.error('stripe-checkout error:', err);
     res.status(500).json({ error: 'Could not start checkout.' });

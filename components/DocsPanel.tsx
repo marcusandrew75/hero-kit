@@ -133,7 +133,9 @@ const CHANGELOG: ChangeEntry[] = [
   {
     version: '4.7', date: '24 Jul 2026',
     items: [
-      'Added: HeroKit Pro — a one-time unlock (sign in with Google or email) for 2×/4× export and unlimited synced Looks. Free plan stays fully usable at 1× export and up to 3 saved Looks',
+      'Added: HeroKit Pro — a one-time unlock that backs the project and gets you new effects first, plus 2×/4× export, WebP export, and unlimited Looks. Free plan stays fully usable at 1× PNG/JPG export and up to 3 saved Looks',
+      'Fixed: WebP export was silently producing a PNG (identical file size) — it now encodes a real, much smaller WebP',
+      'Changed: export resolutions are now fixed targets — 1× FHD, 2× 4K, 4× 8K — with a live output-resolution readout, so a tier means the same size on every screen (previously it scaled with your window)',
     ],
   },
   {

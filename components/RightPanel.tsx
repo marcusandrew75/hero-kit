@@ -1,14 +1,22 @@
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { BUILT_IN_PRESETS } from '../presets';
-import { toPng, toJpeg } from 'html-to-image';
+import { toPng, toJpeg, toCanvas } from 'html-to-image';
 import SpotBlurMap from './SpotBlurMap';
 import EffectMaskPad from './EffectMaskPad';
 import DocsPanel from './DocsPanel';
 import { generateBackground } from '../services/generate';
 import { useKeyboardOpen } from '../hooks/useKeyboardOpen';
 import { Entitlement, isPro } from '../services/entitlement';
+
+// Export resolution ladder — fixed target long-edge (px) per tier, so output
+// is deterministic regardless of the on-screen preview size (which floats with
+// the window). 1920 → 3840 → 7680 is literally 1×/2×/4×, mapping cleanly to the
+// recognisable FHD/4K/8K names. The pixelRatio handed to html-to-image is
+// derived at export time as target ÷ current preview long-edge.
+const EXPORT_TARGET_LONG_EDGE: Record<ExportResolution, number> = { '1x': 1920, '2x': 3840, '4x': 7680 };
+const EXPORT_RES_NAME: Record<ExportResolution, string> = { '1x': 'FHD', '2x': '4K', '4x': '8K' };
 import {
   HardwarePanel, HardwareRow, KnobSlider, TactileToggle, PatternGrid, ColorSwatch, LcdDisplay, T, TabBar,
 } from './ui/HardwareControls';
@@ -91,9 +99,11 @@ const HwSlider: React.FC<{
   );
 };
 
-/** Pill-shaped segmented control. */
+/** Pill-shaped segmented control. `lock` on an option renders a small
+ *  padlock before the label (used for Pro-gated resolutions) — purely a
+ *  visual cue; the option stays selectable and the gate fires downstream. */
 const HwSegment: React.FC<{
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; lock?: boolean }[];
   value: string;
   onChange: (v: string) => void;
 }> = ({ options, value, onChange }) => {
@@ -131,7 +141,7 @@ const HwSegment: React.FC<{
         <button
           key={o.id}
           onClick={() => onChange(o.id)}
-          className="leading-none"
+          className="leading-none inline-flex items-center justify-center gap-1"
           style={{
             position: 'relative', zIndex: 1,
             flex: 1,
@@ -145,6 +155,10 @@ const HwSegment: React.FC<{
             transition: 'color 0.22s ease',
           }}
         >
+          {o.lock && (
+            <i className="ph-fill ph-lock-simple"
+               style={{ fontSize: 9, opacity: 0.55, transform: 'translateY(-0.5px)' }} />
+          )}
           {o.label}
         </button>
       ))}
@@ -1318,6 +1332,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const toggleGroup = (id: string) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
   const [format, setFormat]       = useState<ExportFormat>('PNG');
   const [resolution, setResolution] = useState<ExportResolution>('2x');
+  const [outDims, setOutDims]     = useState<{ w: number; h: number } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showDocs, setShowDocs]   = useState(false);
   const [sourceMode, setSourceMode] = useState<'upload' | 'generate'>('upload');
@@ -1356,7 +1371,9 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const handleExport = async () => {
     const node = document.getElementById('heroken-canvas');
     if (!node) return;
-    if (resolution !== '1x' && !isPro(entitlement)) { onOpenAccount(); return; }
+    // Pro gates: high-res (2×/4×) and WebP. Either one on a free plan opens
+    // the paywall instead of exporting.
+    if ((resolution !== '1x' || format === 'WebP') && !isPro(entitlement)) { onOpenAccount(); return; }
     setExporting(true);
     onExportPhaseChange?.('winding');
     try {
@@ -1367,16 +1384,51 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
       // no point delaying a real export for an animation that won't show.
       if (onExportPhaseChange) await new Promise(r => setTimeout(r, 420));
       onExportPhaseChange?.('processing');
-      const pr = resolution === '4x' ? 4 : resolution === '2x' ? 2 : 1;
-      const dataUrl = format === 'JPG'
-        ? await toJpeg(node, { pixelRatio: pr, quality: 0.95 })
-        : await toPng(node, { pixelRatio: pr, cacheBust: true });
+      // Dynamic pixelRatio so output always hits the tier's fixed target long
+      // edge (FHD/4K/8K), independent of how big the preview renders on screen.
+      const rect = node.getBoundingClientRect();
+      const longEdge = Math.max(rect.width, rect.height) || 1;
+      const pr = EXPORT_TARGET_LONG_EDGE[resolution] / longEdge;
+      let dataUrl: string;
+      if (format === 'JPG') {
+        dataUrl = await toJpeg(node, { pixelRatio: pr, quality: 0.95 });
+      } else if (format === 'WebP') {
+        // html-to-image has no toWebp — render to a canvas, then let the
+        // browser encode WebP. Without this, WebP fell through to toPng and
+        // produced a PNG saved as .webp (same bytes, no size win). 0.92 is a
+        // high-quality lossy setting that still lands far smaller than PNG.
+        const canvas = await toCanvas(node, { pixelRatio: pr, cacheBust: true });
+        dataUrl = canvas.toDataURL('image/webp', 0.92);
+      } else {
+        dataUrl = await toPng(node, { pixelRatio: pr, cacheBust: true });
+      }
       const a = document.createElement('a');
       a.download = `herokit.${format.toLowerCase()}`;
       a.href = dataUrl; a.click();
     } catch { alert('Export failed — try a lower resolution.'); }
     finally { setExporting(false); onExportPhaseChange?.('idle'); }
   };
+
+  // Live "Output · 3840 × 2160" readout — mirrors the export maths so the user
+  // sees the exact pixels the selected tier will produce, for the current
+  // aspect ratio. Re-measures on tier change and whenever the preview box
+  // resizes (window resize / aspect-ratio switch both change its size).
+  useEffect(() => {
+    const measure = () => {
+      const node = document.getElementById('heroken-canvas');
+      const rect = node?.getBoundingClientRect();
+      if (!rect || !rect.width || !rect.height) { setOutDims(null); return; }
+      const longEdge = Math.max(rect.width, rect.height);
+      const scale = EXPORT_TARGET_LONG_EDGE[resolution] / longEdge;
+      setOutDims({ w: Math.round(rect.width * scale), h: Math.round(rect.height * scale) });
+    };
+    measure();
+    const node = document.getElementById('heroken-canvas');
+    const ro = node ? new ResizeObserver(measure) : null;
+    if (node && ro) ro.observe(node);
+    window.addEventListener('resize', measure);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
+  }, [resolution]);
 
   const hasSource = !!(state.imageUrl || state.videoUrl);
 
@@ -1464,7 +1516,11 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
         {/* ── Export ─────────────────────────────────────────────────────── */}
         <HardwarePanel label="Image Export" number={1}>
           <HwSegment
-            options={[{ id:'PNG',label:'PNG' },{ id:'WebP',label:'WebP' },{ id:'JPG',label:'JPG' }]}
+            options={[
+              { id:'PNG', label:'PNG' },
+              { id:'JPG', label:'JPG' },
+              { id:'WebP', label:'WebP', lock: !isPro(entitlement) },
+            ]}
             value={format} onChange={v => setFormat(v as ExportFormat)}
           />
           {/* Mounting plate — button set into panel surface, K.O. II style */}
@@ -1479,12 +1535,21 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
             <HwSegment
               options={[
                 { id:'1x', label:'1×' },
-                { id:'2x', label: isPro(entitlement) ? '2×' : '2× · Pro' },
-                { id:'4x', label: isPro(entitlement) ? '4×' : '4× · Pro' },
+                { id:'2x', label:'2×', lock: !isPro(entitlement) },
+                { id:'4x', label:'4×', lock: !isPro(entitlement) },
               ]}
               value={resolution} onChange={v => setResolution(v as ExportResolution)}
             />
           </Row>
+          {/* Output readout — the exact pixels this tier produces, à la Shots */}
+          <div className="flex items-center justify-between px-0.5 -mt-1">
+            <span className="text-[10.5px] font-medium tracking-wide" style={{ color: T.dim }}>
+              Output · {EXPORT_RES_NAME[resolution]}
+            </span>
+            <span className="text-[10.5px] font-semibold tabular-nums" style={{ color: T.muted }}>
+              {outDims ? `${outDims.w} × ${outDims.h}` : '—'}
+            </span>
+          </div>
         </HardwarePanel>
 
         {/* ── Video Export — hidden for now, parked for a later build ─────── */}

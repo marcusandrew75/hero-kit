@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Canvas from './components/Canvas';
 import RightPanel from './components/RightPanel';
 import PreviewOverlay, { PreviewLayout, PreviewFont, PreviewTheme, PreviewCopy, PreviewCopyField } from './components/PreviewOverlay';
@@ -18,7 +18,7 @@ import { BackgroundState } from './types';
 import { DEFAULT } from './defaultState';
 import { rollDice } from './dice';
 import { EASTER_EGGS, EasterEgg } from './easterEggs';
-import PaywallPanel from './components/PaywallPanel';
+import PaywallPanel, { PRO_INTENT_KEY } from './components/PaywallPanel';
 import { supabase } from './services/supabaseClient';
 import { fetchEntitlement, getCachedEntitlement, FREE_ENTITLEMENT, Entitlement } from './services/entitlement';
 import type { User } from '@supabase/supabase-js';
@@ -106,6 +106,7 @@ const App: React.FC = () => {
   // entitlement.ts) so the export/Looks gates don't flash "free" for a frame
   // before the real Supabase round-trip resolves on load.
   const [showPaywall, setShowPaywall]     = useState(false);
+  const [resumeCheckout, setResumeCheckout] = useState(false);
   const [user, setUser]                   = useState<User | null>(null);
   const [entitlement, setEntitlement]     = useState<Entitlement>(getCachedEntitlement());
   useEffect(() => {
@@ -121,30 +122,41 @@ const App: React.FC = () => {
     fetchEntitlement(user.id).then(e => { if (!cancelled) setEntitlement(e); });
     return () => { cancelled = true; };
   }, [user]);
-  // Stripe redirects back here with ?checkout=success before the webhook
-  // necessarily lands — poll briefly rather than a single fetch, since
-  // there's a real (usually sub-second, but not guaranteed) race between
-  // the redirect and Stripe's server-to-server webhook call.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!user || !params.has('checkout')) return;
-    const wasSuccess = params.get('checkout') === 'success';
-    params.delete('checkout');
-    const cleanSearch = params.toString();
-    window.history.replaceState({}, '', window.location.pathname + (cleanSearch ? `?${cleanSearch}` : '') + window.location.hash);
-    if (!wasSuccess) return;
-    let cancelled = false;
+  // Called when embedded checkout reports success. The webhook is the source
+  // of truth and fires server-to-server, so there's a brief (usually sub-
+  // second, not guaranteed) race between the client onComplete and the
+  // entitlement actually being written — poll a few times rather than once.
+  const refreshEntitlement = useCallback(() => {
+    if (!user) return;
     let attempts = 0;
     const poll = () => {
       fetchEntitlement(user.id).then(e => {
-        if (cancelled) return;
         setEntitlement(e);
-        if (e.plan !== 'pro' && attempts < 5) { attempts++; setTimeout(poll, 1500); }
+        if (e.plan !== 'pro' && attempts < 6) { attempts++; setTimeout(poll, 1500); }
       });
     };
     poll();
-    return () => { cancelled = true; };
   }, [user]);
+  // Resume after OAuth/magic-link: the paywall drops a sessionStorage
+  // breadcrumb before it sends the user off to sign in, so on return (a fresh
+  // page load, once the session resolves) we consume it exactly once here,
+  // reopen the modal, and flag it to jump straight to the payment step.
+  // Consuming the key in App (single owner) avoids it lingering and
+  // re-triggering the payment step on later opens.
+  useEffect(() => {
+    if (user && sessionStorage.getItem(PRO_INTENT_KEY)) {
+      sessionStorage.removeItem(PRO_INTENT_KEY);
+      setResumeCheckout(true);
+      setShowPaywall(true);
+    }
+  }, [user]);
+  // Whenever the paywall opens, re-check the plan from Supabase so a Pro user
+  // sees the Pro confirmation rather than the sales/checkout flow — covers the
+  // case where entitlement changed out-of-band (e.g. another device, or a
+  // manual edit) since the last fetch.
+  useEffect(() => {
+    if (showPaywall && user) fetchEntitlement(user.id).then(setEntitlement);
+  }, [showPaywall, user]);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const isMobile = useIsMobile();
   const { offsetTop: viewportOffsetTop, height: viewportHeight } = useVisualViewport();
@@ -791,9 +803,11 @@ const App: React.FC = () => {
 
       <PaywallPanel
         open={showPaywall}
-        onClose={() => setShowPaywall(false)}
+        onClose={() => { setShowPaywall(false); setResumeCheckout(false); }}
         user={user}
         entitlement={entitlement}
+        onPurchaseComplete={refreshEntitlement}
+        resumeCheckout={resumeCheckout}
       />
 
       {/* Temporary viewport debug readout — only shown when ?debug is in the

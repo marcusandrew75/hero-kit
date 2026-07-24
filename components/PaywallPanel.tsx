@@ -41,6 +41,8 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
   const [emailSent, setEmailSent] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -73,6 +75,25 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     onClose();
+  };
+
+  const handleUnlock = async () => {
+    if (!user || checkingOut) return;
+    setCheckingOut(true);
+    setCheckoutError(null);
+    try {
+      const res = await fetch('/api/stripe-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, email: user.email, returnUrl: window.location.href }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || 'Could not start checkout.');
+      window.location.href = data.url; // leaving the page — no need to reset checkingOut here
+    } catch (err) {
+      setCheckoutError(err instanceof Error ? err.message : 'Could not start checkout.');
+      setCheckingOut(false);
+    }
   };
 
   return createPortal(
@@ -160,9 +181,27 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
               <p className="text-[12px]" style={{ color: T.muted }}>
                 Current plan: <strong style={{ color: T.text }}>{entitlement.plan === 'pro' ? 'Pro' : 'Free'}</strong>
               </p>
-              <p className="text-[11px] leading-relaxed" style={{ color: T.dim }}>
-                Plan picker + checkout coming next.
-              </p>
+
+              {entitlement.plan === 'pro' ? (
+                <p className="text-[12.5px] font-semibold leading-relaxed" style={{ color: T.accent }}>
+                  You're on HeroKit Pro — thanks for the support!
+                </p>
+              ) : (
+                <>
+                  <p className="text-[12px] leading-relaxed" style={{ color: T.muted }}>
+                    One-time payment, no subscription — unlocks high-res (2x/4x) export and unlimited synced Looks, forever.
+                  </p>
+                  <button onClick={handleUnlock} disabled={checkingOut}
+                    className="py-2.5 rounded-xl text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+                    style={{ background: T.accent, color: '#fff' }}>
+                    {checkingOut ? 'Redirecting…' : 'Unlock HeroKit Pro'}
+                  </button>
+                  {checkoutError && (
+                    <p className="text-[11px] font-medium leading-relaxed" style={{ color: T.accent }}>{checkoutError}</p>
+                  )}
+                </>
+              )}
+
               <button onClick={handleSignOut}
                 className="mt-2 py-2 px-4 rounded-xl text-[12px] font-medium self-start transition-all"
                 style={{ background: T.panel, color: T.muted, border: `1px solid ${T.border}` }}

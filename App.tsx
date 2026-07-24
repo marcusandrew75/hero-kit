@@ -121,6 +121,30 @@ const App: React.FC = () => {
     fetchEntitlement(user.id).then(e => { if (!cancelled) setEntitlement(e); });
     return () => { cancelled = true; };
   }, [user]);
+  // Stripe redirects back here with ?checkout=success before the webhook
+  // necessarily lands — poll briefly rather than a single fetch, since
+  // there's a real (usually sub-second, but not guaranteed) race between
+  // the redirect and Stripe's server-to-server webhook call.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!user || !params.has('checkout')) return;
+    const wasSuccess = params.get('checkout') === 'success';
+    params.delete('checkout');
+    const cleanSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (cleanSearch ? `?${cleanSearch}` : '') + window.location.hash);
+    if (!wasSuccess) return;
+    let cancelled = false;
+    let attempts = 0;
+    const poll = () => {
+      fetchEntitlement(user.id).then(e => {
+        if (cancelled) return;
+        setEntitlement(e);
+        if (e.plan !== 'pro' && attempts < 5) { attempts++; setTimeout(poll, 1500); }
+      });
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [user]);
   const [isFullscreen, setIsFullscreen]   = useState(false);
   const isMobile = useIsMobile();
   const { offsetTop: viewportOffsetTop, height: viewportHeight } = useVisualViewport();

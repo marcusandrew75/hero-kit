@@ -1428,17 +1428,13 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
               <i className="ph ph-bookmark-simple text-base" />
             </button>
-            {/* Hidden until Stripe pricing is live — re-enable by uncommenting.
-                onOpenAccount/PaywallPanel wiring stays intact in the meantime. */}
-            {false && (
-              <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
-                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-                style={{ color: T.muted }}
-                onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-                onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-                <i className="ph ph-user-circle text-base" />
-              </button>
-            )}
+            <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-user-circle text-base" />
+            </button>
             {/* Icon-only — keeps the row compact. Info icon rather than a hamburger:
                 a hamburger signals "navigation drawer," but this opens a modal
                 (About / Effects Guide / Changelog) — info is the honest affordance. */}

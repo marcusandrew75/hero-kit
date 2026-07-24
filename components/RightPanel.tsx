@@ -1339,9 +1339,6 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
   const [genPrompt, setGenPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError]   = useState<string | null>(null);
-  // Account icon hidden on the live domain while the Pro purchase flow is
-  // still being verified locally — remove this check once Stage 6 is done.
-  const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
   const set = (patch: Partial<BackgroundState>) => onChange(patch);
 
   const handleGenerate = async () => {
@@ -1486,15 +1483,13 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
               <i className="ph ph-bookmark-simple text-base" />
             </button>
-            {isLocalDev && (
-              <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
-                className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
-                style={{ color: T.muted }}
-                onMouseEnter={e => (e.currentTarget.style.color = T.text)}
-                onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-                <i className="ph ph-user-circle text-base" />
-              </button>
-            )}
+            <button onClick={onOpenAccount} title="Account — sign in, Pro plan"
+              className="flex items-center justify-center w-7 h-7 rounded-lg transition-all"
+              style={{ color: T.muted }}
+              onMouseEnter={e => (e.currentTarget.style.color = T.text)}
+              onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
+              <i className="ph ph-user-circle text-base" />
+            </button>
             {/* Icon-only — keeps the row compact. Info icon rather than a hamburger:
                 a hamburger signals "navigation drawer," but this opens a modal
                 (About / Effects Guide / Changelog) — info is the honest affordance. */}

@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.8', date: '24 Jul 2026',
+    items: [
+      'Added: Sumi-e (墨絵) — Japanese ink-wash painting. Maps the photo to black ink over warm washi paper, bleeding mid-tones into soft washes with ink pooling along edges and a dry-brush paper grain. Four controls (Strength, Ink, Bleed, Texture); best on landscapes, mist and simple tonal scenes. Joins the Structure & Form family and the Dice pool',
+    ],
+  },
+  {
     version: '4.7', date: '24 Jul 2026',
     items: [
       'Added: HeroKit Pro — a one-time unlock that backs the project and gets you new effects first, plus 2×/4× export, WebP export, and unlimited Looks. Free plan stays fully usable at 1× PNG/JPG export and up to 3 saved Looks',

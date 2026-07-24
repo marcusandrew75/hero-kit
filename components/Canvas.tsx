@@ -1917,6 +1917,92 @@ const applyGradientMap = (
   return out;
 };
 
+// ─── Sumi-e (Japanese ink wash) ──────────────────────────────────────────────
+// Not a from-scratch brush painting — it's a tonal + texture transform of the
+// source. Luminance is mapped to ink density over a warm washi-paper base:
+// highlights lift to bare paper, mid-tones bleed into soft washes (a blurred
+// luminance copy), real edges darken like pooled ink (Sobel), and a fibrous
+// dry-brush grain breaks up mid-density areas. Reads best on landscapes / mist
+// / simple tonal compositions — exactly what sumi-e itself favours.
+const SUMIE_PAPER: [number, number, number] = [243, 239, 228]; // warm washi cream
+const SUMIE_INK:   [number, number, number] = [24, 22, 20];    // deep warm black
+
+const applySumie = (
+  data: Uint8ClampedArray, w: number, h: number,
+  strength: number, ink: number, bleed: number, texture: number,
+): Uint8ClampedArray => {
+  const amt = Math.max(0, Math.min(100, strength)) / 100;
+  if (amt <= 0) return new Uint8ClampedArray(data);
+  const inkAmt   = Math.max(0, Math.min(100, ink)) / 100;
+  const bleedAmt = Math.max(0, Math.min(100, bleed)) / 100;
+  const texAmt   = Math.max(0, Math.min(100, texture)) / 100;
+
+  // Sharp luminance
+  const lum = new Float32Array(w * h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    lum[p] = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
+  }
+
+  // Washed luminance — blur a grayscale copy so mid-tones bleed into soft
+  // tonal masses. Same canvas-blur-internally recipe as applyBloom.
+  const lumCanvas = document.createElement('canvas'); lumCanvas.width = w; lumCanvas.height = h;
+  const lCtx = lumCanvas.getContext('2d')!;
+  const lImg = lCtx.createImageData(w, h);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    const v = lum[p] * 255;
+    lImg.data[i] = v; lImg.data[i + 1] = v; lImg.data[i + 2] = v; lImg.data[i + 3] = 255;
+  }
+  lCtx.putImageData(lImg, 0, 0);
+  const washCanvas = document.createElement('canvas'); washCanvas.width = w; washCanvas.height = h;
+  const wCtx = washCanvas.getContext('2d')!;
+  wCtx.filter = `blur(${0.5 + bleedAmt * 6}px)`; wCtx.drawImage(lumCanvas, 0, 0); wCtx.filter = 'none';
+  const washData = wCtx.getImageData(0, 0, w, h).data;
+
+  const edges = computeSobelEdges(data, w, h);
+
+  // Low ink → high gamma (only the darkest tones carry ink, airy & high-key);
+  // high ink → low gamma (dense, saturated ink coverage).
+  const gamma = 2.4 - inkAmt * 1.7;
+  const edgePool = 0.25 + inkAmt * 0.3;
+
+  const out = new Uint8ClampedArray(data.length);
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    // Bleed mixes the sharp luminance toward the blurred wash
+    const L = lum[p] * (1 - bleedAmt) + (washData[i] / 255) * bleedAmt;
+
+    // Ink density: dark → ink, highlights lifted to paper by the gamma curve
+    let d = Math.pow(Math.max(0, 1 - L), gamma);
+    d += edges[p] * edgePool; // pooled ink along real edges
+
+    // Fibrous dry-brush break-up — deterministic hash, biting hardest in
+    // mid-density areas so solid darks stay solid and paper stays clean.
+    if (texAmt > 0) {
+      const x = p % w, y = (p - x) / w;
+      let n = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1; if (n < 0) n += 1;
+      const bite = d * (1 - d) * 4;
+      d -= texAmt * 0.4 * (n - 0.5) * bite;
+    }
+    d = Math.max(0, Math.min(1, d));
+
+    const r = SUMIE_PAPER[0] + (SUMIE_INK[0] - SUMIE_PAPER[0]) * d;
+    const g = SUMIE_PAPER[1] + (SUMIE_INK[1] - SUMIE_PAPER[1]) * d;
+    const b = SUMIE_PAPER[2] + (SUMIE_INK[2] - SUMIE_PAPER[2]) * d;
+
+    // Subtle paper grain, only on the lighter (papery) regions
+    let grain = 0;
+    if (texAmt > 0) {
+      let gn = (Math.sin(p * 1.2154 + 4.1) * 21374.1234) % 1; if (gn < 0) gn += 1;
+      grain = (gn - 0.5) * texAmt * 9 * (1 - d) * amt;
+    }
+
+    out[i]     = clamp(data[i]     + (r - data[i])     * amt + grain);
+    out[i + 1] = clamp(data[i + 1] + (g - data[i + 1]) * amt + grain);
+    out[i + 2] = clamp(data[i + 2] + (b - data[i + 2]) * amt + grain);
+    out[i + 3] = data[i + 3];
+  }
+  return out;
+};
+
 // ─── Relief / Emboss-3D ──────────────────────────────────────────────────────
 // Treats image luminance as a height-field and lights it from a chosen angle:
 // the per-pixel brightness gradient (Sobel) is dotted with a light vector to
@@ -2984,6 +3070,7 @@ interface ProcessedImageProps {
   voronoiEnabled: boolean; voronoiPoints: number; voronoiEdgeBias: number; voronoiGapWidth: number; voronoiGapColor: string; voronoiStrength: number;
   kuwaharaEnabled: boolean; kuwaharaRadius: number; kuwaharaStrength: number;
   kuwaharaSoftness: number; kuwaharaVibrance: number; kuwaharaEdgeAccent: number;
+  sumieEnabled: boolean; sumieStrength: number; sumieInk: number; sumieBleed: number; sumieTexture: number;
   kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
   imageSharpen: number;
@@ -3078,6 +3165,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
+    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
@@ -3246,6 +3334,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (lowPolyEnabled)      processed = applyLowPoly(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, lowPolyPoints, lowPolyEdgeBias), lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength);
           if (voronoiEnabled)      processed = applyVoronoi(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, voronoiPoints, voronoiEdgeBias), voronoiGapWidth, voronoiGapColor, voronoiStrength);
           if (kuwaharaEnabled)     processed = applyKuwahara(processed, w, h, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent);
+          if (sumieEnabled)        processed = applySumie(processed, w, h, sumieStrength, sumieInk, sumieBleed, sumieTexture);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
@@ -3318,6 +3407,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
+    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture,
       kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, imageSharpen, canvasDitherStyle, canvasDitherScale,
@@ -3522,6 +3612,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
+    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     imageGlitchEnabled, imageGlitchStyle, imageGlitchIntensity, imageGlitchShift, imageGlitchRgbSplit,
@@ -3552,6 +3643,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (edgeGlowEnabled ?? false) || (splitToneEnabled ?? false) ||
     (gradientMapEnabled ?? false) || (reliefEnabled ?? false) || (contourEnabled ?? false) ||
     (lowPolyEnabled ?? false) || (voronoiEnabled ?? false) || (kuwaharaEnabled ?? false) ||
+    (sumieEnabled ?? false) ||
     (kaleidoscopeEnabled ?? false) ||
     (chromaticAberration > 0) || (imageSharpen > 0) ||
     (ditherStyle !== 'none') ||
@@ -3656,6 +3748,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 voronoiEnabled={voronoiEnabled ?? false} voronoiPoints={voronoiPoints ?? 450} voronoiEdgeBias={voronoiEdgeBias ?? 60} voronoiGapWidth={voronoiGapWidth ?? 2} voronoiGapColor={voronoiGapColor ?? '#0a0a0a'} voronoiStrength={voronoiStrength ?? 100}
                 kuwaharaEnabled={kuwaharaEnabled ?? false} kuwaharaRadius={kuwaharaRadius ?? 4} kuwaharaStrength={kuwaharaStrength ?? 100}
                 kuwaharaSoftness={kuwaharaSoftness ?? 0} kuwaharaVibrance={kuwaharaVibrance ?? 0} kuwaharaEdgeAccent={kuwaharaEdgeAccent ?? 0}
+                sumieEnabled={sumieEnabled ?? false} sumieStrength={sumieStrength ?? 100} sumieInk={sumieInk ?? 55} sumieBleed={sumieBleed ?? 45} sumieTexture={sumieTexture ?? 40}
                 kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
                 imageSharpen={imageSharpen ?? 0}

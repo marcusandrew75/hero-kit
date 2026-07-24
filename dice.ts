@@ -181,6 +181,14 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'sumie',
+    make: () => ({
+      sumieEnabled: true,
+      sumieStrength: randInt(80, 100), sumieInk: randInt(35, 70),
+      sumieBleed: randInt(30, 65), sumieTexture: randInt(25, 60),
+    }),
+  },
+  {
     id: 'cmyk',
     make: () => ({ cmykSeparationEnabled: true, cmykDotSize: rand(3, 6), cmykSpacing: rand(6, 14) }),
   },

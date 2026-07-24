@@ -2234,7 +2234,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
           {/* ── Structure & Form ──────────────────────────────────────────── */}
           <EffectGroup label="Structure & Form" open={!!openGroups.structure} onToggle={() => toggleGroup('structure')}
-            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.voronoiEnabled, state.kaleidoscopeEnabled, state.kuwaharaEnabled].filter(Boolean).length}>
+            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.voronoiEnabled, state.kaleidoscopeEnabled, state.kuwaharaEnabled, state.sumieEnabled].filter(Boolean).length}>
 
             {/* Relief / Emboss-3D */}
             <EffectSection label="Relief" number={1} enabled={state.reliefEnabled}
@@ -2401,6 +2401,33 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
               </Row>
               <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
                 Repaints each pixel with the mean colour of its most uniform neighbourhood — flat areas smooth into brush-stroke patches, edges stay sharp. The genuine oil-painting look, built entirely from the photo's own colors.
+              </p>
+            </EffectSection>
+
+            {/* Sumi-e / Ink Wash */}
+            <EffectSection label="Sumi-e" number={7} enabled={state.sumieEnabled}
+              onToggle={v => set({ sumieEnabled: v })}>
+              <Row label="Strength">
+                <HwSlider value={state.sumieStrength} min={0} max={100}
+                  onChange={v => set({ sumieStrength: v })} />
+              </Row>
+              <Row label="Ink">
+                {/* Ink density — low is airy & high-key, high is dense and inky */}
+                <HwSlider value={state.sumieInk} min={0} max={100}
+                  onChange={v => set({ sumieInk: v })} />
+              </Row>
+              <Row label="Bleed">
+                {/* Wash softness — bleeds mid-tones into soft tonal masses */}
+                <HwSlider value={state.sumieBleed} min={0} max={100}
+                  onChange={v => set({ sumieBleed: v })} />
+              </Row>
+              <Row label="Texture">
+                {/* Paper grain + dry-brush fibre break-up */}
+                <HwSlider value={state.sumieTexture} min={0} max={100}
+                  onChange={v => set({ sumieTexture: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Japanese ink-wash painting (墨絵) — maps the photo to black ink over warm washi paper, bleeding mid-tones into soft washes with ink pooling along edges. Best on landscapes, mist and simple tonal scenes.
               </p>
             </EffectSection>
           </EffectGroup>

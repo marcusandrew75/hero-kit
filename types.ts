@@ -248,6 +248,14 @@ export interface BackgroundState {
   kuwaharaVibrance: number;    // 0–100, saturation boost on the painted result
   kuwaharaEdgeAccent: number;  // 0–100, darken along real photo edges for defined brush-stroke boundaries
 
+  // Sumi-e — Japanese ink-wash treatment: luminance mapped to ink density over
+  // warm washi paper, mid-tones bled into washes, edges pooled, dry-brush grain.
+  sumieEnabled: boolean;
+  sumieStrength: number;  // 0–100, blend over the original
+  sumieInk: number;       // 0–100, ink density / contrast (airy high-key → dense inky)
+  sumieBleed: number;     // 0–100, wash softness (bleed of mid-tones)
+  sumieTexture: number;   // 0–100, paper grain + dry-brush fibre break-up
+
   // CMYK Separation — 4-plate halftone reproduction at classic print screen angles
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;   // 1–12

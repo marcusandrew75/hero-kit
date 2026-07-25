@@ -325,8 +325,11 @@ const rollFinish = (): Partial<BackgroundState> => {
   return finish;
 };
 
-export const rollDice = (excludeHero?: string): DiceRoll => {
-  const pool = excludeHero ? HEROES.filter(h => h.id !== excludeHero) : HEROES;
+export const rollDice = (excludeHero?: string, lockedIds?: string[]): DiceRoll => {
+  let pool = excludeHero ? HEROES.filter(h => h.id !== excludeHero) : HEROES;
+  // Keeps the roll from landing on a Pro early-access effect a free user
+  // couldn't otherwise reach — see earlyAccess.ts.
+  if (lockedIds && lockedIds.length) pool = pool.filter(h => !lockedIds.includes(h.id));
   const hero = pick(pool);
   return { patch: { ...hero.make(), ...rollFinish() }, hero: hero.id };
 };

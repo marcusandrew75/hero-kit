@@ -3071,6 +3071,12 @@ interface ProcessedImageProps {
   kuwaharaEnabled: boolean; kuwaharaRadius: number; kuwaharaStrength: number;
   kuwaharaSoftness: number; kuwaharaVibrance: number; kuwaharaEdgeAccent: number;
   sumieEnabled: boolean; sumieStrength: number; sumieInk: number; sumieBleed: number; sumieTexture: number;
+  // Effect ids currently early-access-locked for this user (e.g. ['sumie']) —
+  // the pipeline skips applying a locked effect even if its own Enabled flag
+  // is true, so a free user can't get a Pro-only look via a shared Look link,
+  // a restored History entry, or the Dice roll (dice.ts itself already
+  // excludes locked ids from its pool; this is the render-level backstop).
+  lockedEffects: string[];
   kaleidoscopeEnabled: boolean; kaleidoscopeMode: 'radial' | 'mirror'; kaleidoscopeSegments: number; kaleidoscopeAngle: number; kaleidoscopeZoom: number;
   caStrength: number;
   imageSharpen: number;
@@ -3165,7 +3171,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
-    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture,
+    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture, lockedEffects,
     kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
     colorGradeEnabled, colorGradePreset, colorGradeStrength,
     caStrength,
@@ -3334,7 +3340,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (lowPolyEnabled)      processed = applyLowPoly(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, lowPolyPoints, lowPolyEdgeBias), lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength);
           if (voronoiEnabled)      processed = applyVoronoi(processed, w, h, sampleLowPolyPoints(computeSobelEdges(processed, w, h), w, h, voronoiPoints, voronoiEdgeBias), voronoiGapWidth, voronoiGapColor, voronoiStrength);
           if (kuwaharaEnabled)     processed = applyKuwahara(processed, w, h, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent);
-          if (sumieEnabled)        processed = applySumie(processed, w, h, sumieStrength, sumieInk, sumieBleed, sumieTexture);
+          if (sumieEnabled && !lockedEffects.includes('sumie')) processed = applySumie(processed, w, h, sumieStrength, sumieInk, sumieBleed, sumieTexture);
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
@@ -3407,7 +3413,7 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       lowPolyEnabled, lowPolyPoints, lowPolyEdgeBias, lowPolyShowEdges, lowPolyEdgeColor, lowPolyStrength,
     voronoiEnabled, voronoiPoints, voronoiEdgeBias, voronoiGapWidth, voronoiGapColor, voronoiStrength,
     kuwaharaEnabled, kuwaharaRadius, kuwaharaStrength, kuwaharaSoftness, kuwaharaVibrance, kuwaharaEdgeAccent,
-    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture,
+    sumieEnabled, sumieStrength, sumieInk, sumieBleed, sumieTexture, lockedEffects,
       kaleidoscopeEnabled, kaleidoscopeMode, kaleidoscopeSegments, kaleidoscopeAngle, kaleidoscopeZoom,
       colorGradeEnabled, colorGradePreset, colorGradeStrength,
       caStrength, imageSharpen, canvasDitherStyle, canvasDitherScale,
@@ -3572,9 +3578,13 @@ interface CanvasProps {
   state: BackgroundState;
   hideEffects?: boolean;
   onProcessingChange?: (processing: boolean) => void;
+  // Effect ids currently early-access-locked for this user — see earlyAccess.ts.
+  // Threaded down to ProcessedImageCanvas so a locked effect never renders,
+  // even if its own Enabled flag is true in state (shared Look, History, Dice).
+  lockedEffects?: string[];
 }
 
-const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessingChange }) => {
+const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessingChange, lockedEffects = [] }) => {
   const {
     bgColor, maskColor, imageUrl, videoUrl,
     imageFilter, imageBlur, imageSharpen, imageMask, imageOpacity, imageFlipH, imageFlipV, tintColor, chromaticAberration,
@@ -3749,6 +3759,7 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 kuwaharaEnabled={kuwaharaEnabled ?? false} kuwaharaRadius={kuwaharaRadius ?? 4} kuwaharaStrength={kuwaharaStrength ?? 100}
                 kuwaharaSoftness={kuwaharaSoftness ?? 0} kuwaharaVibrance={kuwaharaVibrance ?? 0} kuwaharaEdgeAccent={kuwaharaEdgeAccent ?? 0}
                 sumieEnabled={sumieEnabled ?? false} sumieStrength={sumieStrength ?? 100} sumieInk={sumieInk ?? 55} sumieBleed={sumieBleed ?? 45} sumieTexture={sumieTexture ?? 40}
+                lockedEffects={lockedEffects}
                 kaleidoscopeEnabled={kaleidoscopeEnabled ?? false} kaleidoscopeMode={(kaleidoscopeMode ?? 'radial') as 'radial' | 'mirror'} kaleidoscopeSegments={kaleidoscopeSegments ?? 6} kaleidoscopeAngle={kaleidoscopeAngle ?? 0} kaleidoscopeZoom={kaleidoscopeZoom ?? 1}
                 caStrength={chromaticAberration ?? 0}
                 imageSharpen={imageSharpen ?? 0}

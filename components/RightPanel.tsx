@@ -9,6 +9,7 @@ import DocsPanel from './DocsPanel';
 import { generateBackground } from '../services/generate';
 import { useKeyboardOpen } from '../hooks/useKeyboardOpen';
 import { Entitlement, isPro } from '../services/entitlement';
+import { isEarlyAccessLocked } from '../earlyAccess';
 
 // Export resolution ladder — fixed target long-edge (px) per tier, so output
 // is deterministic regardless of the on-screen preview size (which floats with
@@ -180,48 +181,66 @@ const EffectSection: React.FC<{
   number: number;
   enabled: boolean;
   onToggle: (v: boolean) => void;
+  // Pro early-access gate (see earlyAccess.ts) — when locked, the toggle is
+  // replaced with a PRO badge that opens the paywall, and children stay
+  // hidden even if `enabled` is stale-true from a shared Look or History
+  // entry (Canvas.tsx independently refuses to render a locked effect too).
+  locked?: boolean;
+  onLockedClick?: () => void;
   children?: React.ReactNode;
-}> = ({ label, number, enabled, onToggle, children }) => (
-  <div>
-    <div className="flex items-center gap-2 py-2.5"
-      style={{
-        /* 3D groove divider — two hairlines: shadow below, highlight above.
-           Gives the appearance of a machined channel pressed into the panel. */
-        borderBottom: `1px solid ${T.borderDk}`,
-        boxShadow: `0 1px 0 rgba(255,255,255,0.75)`,
-      }}>
-      {/* LED status dot — glows when effect is active, invisible when off */}
-      <span
-        className="w-1.5 h-1.5 rounded-full shrink-0 transition-all duration-200"
-        style={enabled ? {
-          background: T.accent,
-          boxShadow: `0 0 5px rgba(232,67,32,0.55), 0 0 2px ${T.accent}`,
-        } : {
-          background: T.border,
-          boxShadow: 'none',
-        }}
-      />
-      {/* Sequential row number — same Share Tech Mono treatment as panel numbers,
-          turns a long toggle list into something that reads like a patch bay. */}
-      <span
-        className="leading-none shrink-0"
+}> = ({ label, number, enabled, onToggle, locked, onLockedClick, children }) => {
+  const active = enabled && !locked;
+  return (
+    <div>
+      <div className="flex items-center gap-2 py-2.5"
         style={{
-          fontFamily: '"Share Tech Mono", ui-monospace, monospace',
-          fontSize: 10, color: T.dim, letterSpacing: '0.04em',
-        }}
-      >
-        {String(number).padStart(2, '0')}
-      </span>
-      <span className="text-[9px] font-bold tracking-[0.09em] uppercase flex-1 select-none whitespace-nowrap" style={{ color: T.text }}>
-        {label}
-      </span>
-      <TactileToggle value={enabled} onChange={onToggle} />
+          /* 3D groove divider — two hairlines: shadow below, highlight above.
+             Gives the appearance of a machined channel pressed into the panel. */
+          borderBottom: `1px solid ${T.borderDk}`,
+          boxShadow: `0 1px 0 rgba(255,255,255,0.75)`,
+        }}>
+        {/* LED status dot — glows when effect is active, invisible when off */}
+        <span
+          className="w-1.5 h-1.5 rounded-full shrink-0 transition-all duration-200"
+          style={active ? {
+            background: T.accent,
+            boxShadow: `0 0 5px rgba(232,67,32,0.55), 0 0 2px ${T.accent}`,
+          } : {
+            background: T.border,
+            boxShadow: 'none',
+          }}
+        />
+        {/* Sequential row number — same Share Tech Mono treatment as panel numbers,
+            turns a long toggle list into something that reads like a patch bay. */}
+        <span
+          className="leading-none shrink-0"
+          style={{
+            fontFamily: '"Share Tech Mono", ui-monospace, monospace',
+            fontSize: 10, color: T.dim, letterSpacing: '0.04em',
+          }}
+        >
+          {String(number).padStart(2, '0')}
+        </span>
+        <span className="text-[9px] font-bold tracking-[0.09em] uppercase flex-1 select-none whitespace-nowrap" style={{ color: T.text }}>
+          {label}
+        </span>
+        {locked ? (
+          <button onClick={onLockedClick} title="Pro early access"
+            className="flex items-center gap-1 px-2 py-1 rounded-full transition-all shrink-0"
+            style={{ background: T.panel, border: `1px solid ${T.border}`, color: T.accent }}>
+            <i className="ph-fill ph-lock-simple text-[10px]" />
+            <span style={{ fontFamily: '"Share Tech Mono", ui-monospace, monospace', fontSize: 9, fontWeight: 700, letterSpacing: '0.05em' }}>PRO</span>
+          </button>
+        ) : (
+          <TactileToggle value={enabled} onChange={onToggle} />
+        )}
+      </div>
+      {active && children && (
+        <div className="pt-4 pb-3 space-y-4">{children}</div>
+      )}
     </div>
-    {enabled && children && (
-      <div className="pt-4 pb-3 space-y-4">{children}</div>
-    )}
-  </div>
-);
+  );
+};
 
 /** Collapsible family band grouping several EffectSections. Header is a full-
     width tappable row (caret + label) that shows a glowing active-count LED
@@ -1326,6 +1345,7 @@ interface RightPanelProps {
 
 const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, onOpenAccount, entitlement, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
+  const sumieLocked = isEarlyAccessLocked('sumie', isPro(entitlement));
   // Effect-family group collapse — keyed open map, all collapsed on load.
   // In-memory only (resets per session), like the other transient panel UI.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -2234,7 +2254,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
           {/* ── Structure & Form ──────────────────────────────────────────── */}
           <EffectGroup label="Structure & Form" open={!!openGroups.structure} onToggle={() => toggleGroup('structure')}
-            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.voronoiEnabled, state.kaleidoscopeEnabled, state.kuwaharaEnabled, state.sumieEnabled].filter(Boolean).length}>
+            activeCount={[state.reliefEnabled, state.contourEnabled, state.lowPolyEnabled, state.voronoiEnabled, state.kaleidoscopeEnabled, state.kuwaharaEnabled, state.sumieEnabled && !sumieLocked].filter(Boolean).length}>
 
             {/* Relief / Emboss-3D */}
             <EffectSection label="Relief" number={1} enabled={state.reliefEnabled}
@@ -2406,7 +2426,8 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
             {/* Sumi-e / Ink Wash */}
             <EffectSection label="Sumi-e" number={7} enabled={state.sumieEnabled}
-              onToggle={v => set({ sumieEnabled: v })}>
+              onToggle={v => set({ sumieEnabled: v })}
+              locked={sumieLocked} onLockedClick={onOpenAccount}>
               <Row label="Strength">
                 <HwSlider value={state.sumieStrength} min={0} max={100}
                   onChange={v => set({ sumieStrength: v })} />

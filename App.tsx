@@ -20,7 +20,8 @@ import { rollDice } from './dice';
 import { EASTER_EGGS, EasterEgg } from './easterEggs';
 import PaywallPanel, { PRO_INTENT_KEY } from './components/PaywallPanel';
 import { supabase } from './services/supabaseClient';
-import { fetchEntitlement, getCachedEntitlement, FREE_ENTITLEMENT, Entitlement } from './services/entitlement';
+import { fetchEntitlement, getCachedEntitlement, FREE_ENTITLEMENT, Entitlement, isPro } from './services/entitlement';
+import { lockedEffectIds } from './earlyAccess';
 import type { User } from '@supabase/supabase-js';
 
 export { DEFAULT };
@@ -331,7 +332,7 @@ const App: React.FC = () => {
   // placed. lastDiceHero avoids repeating the same hero twice in a row.
   const lastDiceHero = useRef<string>();
   const handleDiceRoll = () => {
-    const { patch, hero } = rollDice(lastDiceHero.current);
+    const { patch, hero } = rollDice(lastDiceHero.current, lockedEffectIds(isPro(entitlement)));
     lastDiceHero.current = hero;
     setState(prev => ({
       ...DEFAULT, ...patch,
@@ -462,7 +463,7 @@ const App: React.FC = () => {
               : { position: 'absolute', inset: 0 }
           }
         >
-          <Canvas state={state} hideEffects={hideEffects} onProcessingChange={setCanvasProcessing} />
+          <Canvas state={state} hideEffects={hideEffects} onProcessingChange={setCanvasProcessing} lockedEffects={lockedEffectIds(isPro(entitlement))} />
 
           {/* Dice roll — big rotating, slowly pulsing die centered on the
               canvas while the new effect stack spins in, so it's obvious

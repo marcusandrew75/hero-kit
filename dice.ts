@@ -189,6 +189,16 @@ const HEROES: Hero[] = [
     }),
   },
   {
+    id: 'newspaper',
+    make: () => ({
+      newspaperEnabled: true,
+      newspaperStrength: randInt(80, 100), newspaperDotSize: rand(2, 5),
+      newspaperMisregister: rand(0.5, 2.5), newspaperGrain: randInt(20, 55),
+      newspaperVintage: randInt(20, 80), newspaperSaturation: randInt(90, 150),
+      newspaperSoften: randInt(10, 45), newspaperTint: randInt(30, 90),
+    }),
+  },
+  {
     id: 'cmyk',
     make: () => ({ cmykSeparationEnabled: true, cmykDotSize: rand(3, 6), cmykSpacing: rand(6, 14) }),
   },

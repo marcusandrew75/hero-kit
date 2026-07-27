@@ -1346,6 +1346,8 @@ interface RightPanelProps {
 const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, onResetEffects, onOpenAccount, entitlement, editingLayerId, onEditLayer, mobile, onExportPhaseChange }) => {
   const keyboardOpen = useKeyboardOpen();
   const sumieLocked = isEarlyAccessLocked('sumie', isPro(entitlement));
+  const newspaperLocked = isEarlyAccessLocked('newspaper', isPro(entitlement));
+  const vhsLocked = isEarlyAccessLocked('vhs', isPro(entitlement));
   // Effect-family group collapse — keyed open map, all collapsed on load.
   // In-memory only (resets per session), like the other transient panel UI.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -1973,7 +1975,7 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
 
           {/* ── Print & Halftone ──────────────────────────────────────────── */}
           <EffectGroup label="Print & Halftone" open={!!openGroups.print} onToggle={() => toggleGroup('print')}
-            activeCount={[state.halftoneEnabled, state.risoEnabled, state.cmykSeparationEnabled, state.silkscreenEnabled, state.postcardEnabled].filter(Boolean).length}>
+            activeCount={[state.halftoneEnabled, state.risoEnabled, state.cmykSeparationEnabled, state.silkscreenEnabled, state.postcardEnabled, state.newspaperEnabled && !newspaperLocked].filter(Boolean).length}>
 
             {/* Halftone */}
             <EffectSection label="Halftone" number={1} enabled={state.halftoneEnabled}
@@ -2128,6 +2130,57 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 Oversaturated limited-palette color with a fine ordered texture — vintage linen travel postcard at fine Texture, 90s videogame at chunky.
               </p>
             </EffectSection>
+
+            {/* Newspaper */}
+            <EffectSection label="Newspaper" number={6} enabled={state.newspaperEnabled}
+              onToggle={v => set({ newspaperEnabled: v })}
+              locked={newspaperLocked} onLockedClick={onOpenAccount}>
+              <Row label="Strength">
+                <HwSlider value={state.newspaperStrength} min={0} max={100}
+                  onChange={v => set({ newspaperStrength: v })} />
+              </Row>
+              <Row label="Dot size">
+                <HwSlider value={state.newspaperDotSize} min={1} max={10} step={0.5} decimals={1}
+                  onChange={v => set({ newspaperDotSize: v })} />
+              </Row>
+              <Row label="Misregister">
+                {/* Per-channel offset — the classic press-slip colour fringe */}
+                <HwSlider value={state.newspaperMisregister} min={0} max={4} step={0.1} decimals={1}
+                  onChange={v => set({ newspaperMisregister: v })} />
+              </Row>
+              <Row label="Vintage">
+                {/* Paper stock age — fresh bright newsprint through to creamy,
+                    yellowed stock with ink faded into it */}
+                <HwSlider value={state.newspaperVintage} min={0} max={100}
+                  onChange={v => set({ newspaperVintage: v })} />
+              </Row>
+              <Row label="Tint">
+                {/* Which way the ageing cast leans — yellow/sepia toward one
+                    end, olive-green toward the other. Only visible once
+                    Vintage is above 0 */}
+                <HwSlider value={state.newspaperTint} min={0} max={100}
+                  onChange={v => set({ newspaperTint: v })} />
+              </Row>
+              <Row label="Saturation">
+                {/* Chroma ink density — lifts colour without also crushing the
+                    key plate, so pushing it up doesn't turn the image to mud */}
+                <HwSlider value={state.newspaperSaturation} min={0} max={200}
+                  onChange={v => set({ newspaperSaturation: v })} />
+              </Row>
+              <Row label="Soften">
+                {/* Ink-bleed softness — capped low (≤ ~1.8px) so this reads
+                    as print bleed, not a blur slider */}
+                <HwSlider value={state.newspaperSoften} min={0} max={100}
+                  onChange={v => set({ newspaperSoften: v })} />
+              </Row>
+              <Row label="Grain">
+                <HwSlider value={state.newspaperGrain} min={0} max={100}
+                  onChange={v => set({ newspaperGrain: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                A full-color halftone dot screen on warm newsprint paper, with a touch of press misregistration and grain. Every dot keeps the photo's own real color — a modern reproduction look, not a fixed 4-ink press simulation.
+              </p>
+            </EffectSection>
           </EffectGroup>
 
           {/* ── Distort & Glitch ──────────────────────────────────────────── */}
@@ -2250,6 +2303,45 @@ const RightPanel: React.FC<RightPanelProps> = ({ state, onChange, onOpenLooks, o
                 onChange={v => set({ pixelSortMode: v as typeof state.pixelSortMode })}
               />
             </EffectSection>
+
+            {/* VHS / CRT — hidden for now, parked for a later pass. Same
+                treatment as Video Export above: the effect and its whole
+                pipeline stay intact, just not reachable from the panel. It's
+                also pulled from the Dice pool, so nothing can switch it on
+                while there's no control here to switch it back off. */}
+            {false && (
+            <EffectSection label="VHS" number={6} enabled={state.vhsEnabled}
+              onToggle={v => set({ vhsEnabled: v })}
+              locked={vhsLocked} onLockedClick={onOpenAccount}>
+              <Row label="Strength">
+                <HwSlider value={state.vhsStrength} min={0} max={100}
+                  onChange={v => set({ vhsStrength: v })} />
+              </Row>
+              <Row label="Scanlines">
+                {/* Scanline depth + the RGB phosphor triad mask */}
+                <HwSlider value={state.vhsScanlines} min={0} max={100}
+                  onChange={v => set({ vhsScanlines: v })} />
+              </Row>
+              <Row label="Chroma bleed">
+                {/* Colour smears sideways and lags its edge — composite video's
+                    low chroma bandwidth, the signature VHS artifact */}
+                <HwSlider value={state.vhsChromaBleed} min={0} max={100}
+                  onChange={v => set({ vhsChromaBleed: v })} />
+              </Row>
+              <Row label="Tracking">
+                {/* Tape weave, plus dropout bands that tear and burst to static */}
+                <HwSlider value={state.vhsTracking} min={0} max={100}
+                  onChange={v => set({ vhsTracking: v })} />
+              </Row>
+              <Row label="Glow">
+                <HwSlider value={state.vhsGlow} min={0} max={100}
+                  onChange={v => set({ vhsGlow: v })} />
+              </Row>
+              <p className="text-[10px] leading-relaxed" style={{ color: T.dim }}>
+                Eighties tape and tube: colour bleeds sideways the way composite video's low chroma bandwidth makes it, the tape weaves and drops out into static, then a CRT lays scanlines, phosphor triads and halation over the lot.
+              </p>
+            </EffectSection>
+            )}
           </EffectGroup>
 
           {/* ── Structure & Form ──────────────────────────────────────────── */}

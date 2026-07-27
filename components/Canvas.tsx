@@ -1528,6 +1528,345 @@ const applyHalftonePixels = (
   return out;
 };
 
+// ─── Newspaper ────────────────────────────────────────────────────────────────
+// A real four-plate press simulation on warm newsprint. Each process ink
+// (C/M/Y/K) gets its own halftone screen at its classic angle, and the plates
+// multiply over each other on paper — the overlapping rosette is what actually
+// reads as "printed", which a single screen can't fake. Misregistration slips
+// whole plates against each other exactly like a real press, giving the colour
+// fringing along edges; ink density is capped and slightly impure so colour
+// mutes toward newsprint rather than staying photo-vivid.
+//
+// Related to CMYK Separation above (same plate/screen-angle core), but that one
+// is a clean white-paper reproduction; this adds the newsprint stock, plate
+// misregistration, paper grain and a strength blend, which together are what
+// make the printed-newspaper look rather than a press proof.
+// Paper stock, lerped by the Vintage control: fresh bright newsprint at 0,
+// yellowed/creamy aged stock at 100.
+const NEWSPAPER_PAPER_FRESH: [number, number, number] = [250, 248, 243];
+const NEWSPAPER_PAPER_AGED:  [number, number, number] = [234, 228, 210];
+// Newsprint process inks — duller and warmer than the bright coated-stock
+// inks CMYK Separation uses, which is most of why colour reads muted.
+const NEWSPAPER_INKS: { ink: [number, number, number]; angle: number; off: [number, number] }[] = [
+  { ink: [  5, 158, 205], angle: 15, off: [-1,  0] }, // cyan
+  { ink: [222,  50, 122], angle: 75, off: [ 1, -1] }, // magenta
+  { ink: [247, 216,  60], angle:  0, off: [ 0,  1] }, // yellow
+  { ink: [ 38,  35,  32], angle: 45, off: [ 0,  0] }, // key — stays registered
+];
+
+const applyNewspaper = (
+  data: Uint8ClampedArray, w: number, h: number,
+  strength: number, dotSize: number, misregister: number, grain: number,
+  vintage: number, saturation: number, soften: number, tint: number,
+): Uint8ClampedArray => {
+  const amt = Math.max(0, Math.min(100, strength)) / 100;
+  const softenAmt = Math.max(0, Math.min(100, soften)) / 100;
+  if (amt <= 0) return new Uint8ClampedArray(data);
+  const dot = Math.max(0.5, dotSize);
+  const mis = Math.max(0, misregister);
+  const grainAmt = Math.max(0, Math.min(100, grain)) / 100;
+  // Eased, not linear — a straight 0-100 mostly reads as "did nothing" until
+  // it's most of the way up. This front-loads the change so ageing is visibly
+  // underway by the time the slider is a third across.
+  const vinRaw = Math.max(0, Math.min(100, vintage)) / 100;
+  const vin = Math.pow(vinRaw, 0.55);
+  const sat = Math.max(0, Math.min(200, saturation)) / 100;
+
+  const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+  const PAPER: [number, number, number] = [
+    mix(NEWSPAPER_PAPER_FRESH[0], NEWSPAPER_PAPER_AGED[0], vin),
+    mix(NEWSPAPER_PAPER_FRESH[1], NEWSPAPER_PAPER_AGED[1], vin),
+    mix(NEWSPAPER_PAPER_FRESH[2], NEWSPAPER_PAPER_AGED[2], vin),
+  ];
+
+  // Screen pitch. maxRadius slightly over spacing/√2 so solid shadows close
+  // up completely instead of topping out as a dot pattern.
+  const spacing = dot * 2;
+  const maxRadius = spacing * 0.72;
+
+  // ── Separate into ink amounts, with GCR so mid-tones carry some key ──
+  const C = new Float32Array(w * h), M = new Float32Array(w * h);
+  const Y = new Float32Array(w * h), K = new Float32Array(w * h);
+  // Chroma inks lift with Saturation; the key plate doesn't, so pushing colour
+  // up doesn't also crush the image into mud. Vintage deliberately barely
+  // touches ink density — ageing is a paper/cast change, and cutting ink here
+  // as well is what made ramping Vintage wash the whole image out.
+  const chromaCap = Math.min(1.6, 0.92 * sat);
+  const keyCap = 0.88 - vin * 0.05;
+  for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+    const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+    let c = 1 - r, m = 1 - g, y = 1 - b;
+    const k = Math.min(c, m, y);
+    if (k < 1) { c = (c - k) / (1 - k); m = (m - k) / (1 - k); y = (y - k) / (1 - k); }
+    else { c = 0; m = 0; y = 0; }
+    C[p] = Math.min(1, c * chromaCap); M[p] = Math.min(1, m * chromaCap);
+    Y[p] = Math.min(1, y * chromaCap); K[p] = Math.min(1, k * keyCap);
+  }
+
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < out.length; i += 4) {
+    out[i] = PAPER[0]; out[i + 1] = PAPER[1]; out[i + 2] = PAPER[2]; out[i + 3] = 255;
+  }
+
+  const cx = w / 2, cy = h / 2;
+  const diag = Math.sqrt(w * w + h * h);
+  const half = diag / 2;
+
+  const plateAmounts = [C, M, Y, K];
+  for (let pi = 0; pi < NEWSPAPER_INKS.length; pi++) {
+    const plate = NEWSPAPER_INKS[pi];
+    const amounts = plateAmounts[pi];
+    // Aged ink sits slightly closer to the paper it soaked into. Kept subtle
+    // on purpose — at 0.3 this alone visibly lifted the whole image as
+    // Vintage rose, which is the opposite of how aged newsprint reads.
+    const fade = vin * 0.1;
+    const ir = mix(plate.ink[0], PAPER[0], fade);
+    const ig = mix(plate.ink[1], PAPER[1], fade);
+    const ib = mix(plate.ink[2], PAPER[2], fade);
+    const rad = (plate.angle * Math.PI) / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    // Plate slip — the whole screen shifts, which is what fringes edges.
+    const ox = plate.off[0] * mis, oy = plate.off[1] * mis;
+
+    for (let v = -half; v <= half; v += spacing) {
+      for (let u = -half; u <= half; u += spacing) {
+        const sx = cx + u * cos - v * sin + ox;
+        const sy = cy + u * sin + v * cos + oy;
+        if (sx < -maxRadius || sx >= w + maxRadius || sy < -maxRadius || sy >= h + maxRadius) continue;
+
+        const px0 = Math.max(0, Math.min(w - 1, Math.round(sx)));
+        const py0 = Math.max(0, Math.min(h - 1, Math.round(sy)));
+        const a = amounts[py0 * w + px0];
+        if (a <= 0.004) continue;
+        // Dot area ∝ ink amount, so radius ∝ √amount — using the amount
+        // directly (as the first pass did) makes highlights vanish and
+        // crushes the whole tonal range toward bare paper.
+        const radius = Math.sqrt(a) * maxRadius;
+        if (radius <= 0.25) continue;
+
+        const minX = Math.max(0, Math.floor(sx - radius - 1)), maxX = Math.min(w - 1, Math.ceil(sx + radius + 1));
+        const minY = Math.max(0, Math.floor(sy - radius - 1)), maxY = Math.min(h - 1, Math.ceil(sy + radius + 1));
+        for (let py = minY; py <= maxY; py++) {
+          const dy = py - sy;
+          for (let px = minX; px <= maxX; px++) {
+            const dx = px - sx;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            // 1px feather — hard-edged circles alias badly and read as
+            // chunky pixels rather than ink at larger dot sizes.
+            const cov = Math.max(0, Math.min(1, radius - d + 0.5));
+            if (cov <= 0) continue;
+            const oi = (py * w + px) * 4;
+            out[oi]     = out[oi]     * (1 - cov + cov * ir / 255);
+            out[oi + 1] = out[oi + 1] * (1 - cov + cov * ig / 255);
+            out[oi + 2] = out[oi + 2] * (1 - cov + cov * ib / 255);
+          }
+        }
+      }
+    }
+  }
+
+  // Ageing cast — the real work of Vintage. Old newsprint doesn't lighten, it
+  // picks up a dull yellow-green (blue drops hardest, red a little, green
+  // least) and loses a touch of overall luminance. Multiplying keeps every
+  // channel ≤ 1 so raising Vintage can only ever darken/dull, never brighten.
+  if (vin > 0) {
+    // Green stays the anchor (barely drops) and blue carries the aged
+    // "depth" regardless of Tint — only how far red pulls back from green
+    // changes, which is what actually shifts the cast between yellow (red
+    // stays with green) and olive-green (red pulls well away from it).
+    // tint=50 reproduces the original fixed calibration exactly.
+    const tintAmt = Math.max(0, Math.min(100, tint)) / 100;
+    const crDrop = 0.02 + (0.16 - 0.02) * tintAmt;
+    const cr = 1 - vin * crDrop;
+    const cg = 1 - vin * 0.01;
+    const cb = 1 - vin * 0.2;
+    for (let i = 0; i < out.length; i += 4) {
+      out[i] = clamp(out[i] * cr); out[i + 1] = clamp(out[i + 1] * cg); out[i + 2] = clamp(out[i + 2] * cb);
+    }
+  }
+
+  // Soften — real ink bleeds slightly into absorbent newsprint stock, so
+  // printed edges lose a touch of crispness versus the source digital image.
+  // Capped low on purpose (≤ ~1.8px) so this reads as ink bleed, not a blur
+  // slider someone can crank into mush.
+  if (softenAmt > 0) {
+    const blurPx = softenAmt * 1.8;
+    const srcCanvas = document.createElement('canvas'); srcCanvas.width = w; srcCanvas.height = h;
+    srcCanvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(out), w, h), 0, 0);
+    const blurCanvas = document.createElement('canvas'); blurCanvas.width = w; blurCanvas.height = h;
+    const blurCtx = blurCanvas.getContext('2d')!;
+    blurCtx.filter = `blur(${blurPx}px)`;
+    blurCtx.drawImage(srcCanvas, 0, 0);
+    out.set(blurCtx.getImageData(0, 0, w, h).data);
+  }
+
+  // Paper grain across the whole sheet (the previous version keyed this off an
+  // exact paper-colour match, so once ink covered the page grain silently
+  // stopped applying — the "grain isn't working" report).
+  if (grainAmt > 0) {
+    for (let p = 0, i = 0; p < w * h; p++, i += 4) {
+      let n = (Math.sin(p * 12.9898 + 4.1) * 43758.5453) % 1; if (n < 0) n += 1;
+      const g2 = (n - 0.5) * grainAmt * 18;
+      out[i] = clamp(out[i] + g2); out[i + 1] = clamp(out[i + 1] + g2); out[i + 2] = clamp(out[i + 2] + g2);
+    }
+  }
+
+  const final = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    final[i]     = clamp(data[i]     + (out[i]     - data[i])     * amt);
+    final[i + 1] = clamp(data[i + 1] + (out[i + 1] - data[i + 1]) * amt);
+    final[i + 2] = clamp(data[i + 2] + (out[i + 2] - data[i + 2]) * amt);
+    final[i + 3] = data[i + 3];
+  }
+  return final;
+};
+
+// ─── VHS / CRT ───────────────────────────────────────────────────────────────
+// Two stages of period-accurate degradation, same as the real signal path:
+// composite tape playback (chroma bleed, tracking tears, static) then CRT
+// display (scanlines, phosphor triads, glow). Not a true NTSC encode/decode —
+// that needs a signal-accurate DSP engine — but built from what each artifact
+// physically IS, so it reads right rather than looking like a scanline overlay.
+const applyVhs = (
+  data: Uint8ClampedArray, w: number, h: number,
+  strength: number, scanlines: number, chromaBleed: number,
+  tracking: number, glow: number,
+): Uint8ClampedArray => {
+  const amt = Math.max(0, Math.min(100, strength)) / 100;
+  if (amt <= 0) return new Uint8ClampedArray(data);
+  const scanAmt  = Math.max(0, Math.min(100, scanlines)) / 100;
+  const bleedAmt = Math.max(0, Math.min(100, chromaBleed)) / 100;
+  const trackAmt = Math.max(0, Math.min(100, tracking)) / 100;
+  const glowAmt  = Math.max(0, Math.min(100, glow)) / 100;
+
+  const frac = (n: number) => { const f = n % 1; return f < 0 ? f + 1 : f; };
+  const hash = (n: number) => frac(Math.sin(n * 12.9898 + 78.233) * 43758.5453);
+
+  // ── Tape tracking — per-row horizontal displacement ─────────────────────
+  // Deterministic (hashed, never Math.random) so the image doesn't crawl on
+  // every re-render — same reasoning as Sumi-e's and Newspaper's noise.
+  const rowShift = new Float32Array(h);
+  const rowStatic = new Float32Array(h);
+  if (trackAmt > 0) {
+    const bandH = Math.max(2, Math.round(h * 0.012));
+    for (let y = 0; y < h; y++) {
+      rowShift[y] = (hash(y) - 0.5) * trackAmt * 3;           // constant weave
+      const band = Math.floor(y / bandH);
+      if (hash(band * 3.7 + 11.1) > 1 - trackAmt * 0.08) {
+        // Dropout band — tears sideways and bursts to static, eased in/out
+        // across the band so it reads as a tape fault, not a hard glitch row.
+        const env = Math.sin(((y % bandH) / bandH) * Math.PI);
+        rowShift[y] += (hash(band * 7.3) - 0.5) * trackAmt * 60 * env;
+        rowStatic[y] = env * trackAmt;
+      }
+    }
+  }
+
+  // ── Composite chroma — full-bandwidth luma, smeared low-bandwidth chroma ─
+  // This is *why* composite video bleeds colour sideways: the chroma
+  // subcarrier carries far less bandwidth than luma, so colour detail washes
+  // horizontally while luma edges stay sharp. Separating and blurring only
+  // chroma reproduces that honestly; blurring RGB would just look soft.
+  const Y = new Float32Array(w * h);
+  const Cb = new Float32Array(w * h);
+  const Cr = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const sh = rowShift[y];
+    for (let x = 0; x < w; x++) {
+      const sx = Math.max(0, Math.min(w - 1, Math.round(x + sh)));
+      const i = (y * w + sx) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const yy = r * 0.299 + g * 0.587 + b * 0.114;
+      const p = y * w + x;
+      Y[p] = yy; Cb[p] = b - yy; Cr[p] = r - yy;
+    }
+  }
+
+  if (bleedAmt > 0) {
+    const rad = Math.max(1, Math.round(1 + bleedAmt * 14));
+    const delay = bleedAmt * 5;
+    const tmpB = new Float32Array(w), tmpR = new Float32Array(w);
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      let sb = 0, sr = 0, cnt = 0;
+      for (let x = 0; x <= rad && x < w; x++) { sb += Cb[row + x]; sr += Cr[row + x]; cnt++; }
+      for (let x = 0; x < w; x++) {
+        tmpB[x] = sb / cnt; tmpR[x] = sr / cnt;
+        const add = x + rad + 1, rem = x - rad;
+        if (add < w) { sb += Cb[row + add]; sr += Cr[row + add]; cnt++; }
+        if (rem >= 0) { sb -= Cb[row + rem]; sr -= Cr[row + rem]; cnt--; }
+      }
+      // Rightward delay — colour lags its edge, the classic composite smear
+      for (let x = 0; x < w; x++) {
+        const sx = Math.max(0, Math.min(w - 1, Math.round(x - delay)));
+        Cb[row + x] = tmpB[sx]; Cr[row + x] = tmpR[sx];
+      }
+    }
+  }
+
+  // ── CRT display — recombine, then scanlines + phosphor triads + static ───
+  const out = new Uint8ClampedArray(data.length);
+  const maskK = scanAmt * 0.22;
+  for (let y = 0; y < h; y++) {
+    // Period-3 sine rather than every-other-row: real scanline gaps fall off
+    // smoothly, and a hard on/off row aliases badly at export resolutions.
+    const scan = 1 - scanAmt * 0.5 * (0.5 + 0.5 * Math.sin((y * Math.PI * 2) / 3));
+    const stat = rowStatic[y];
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      const yy = Y[p], cb = Cb[p], cr = Cr[p];
+      let r = yy + cr;
+      let b = yy + cb;
+      let g = yy - (0.299 * cr + 0.114 * cb) / 0.587;
+
+      // Phosphor mask — RGB triads, each column favouring one gun
+      if (maskK > 0) {
+        const m = x % 3;
+        r *= m === 0 ? 1 + maskK : 1 - maskK * 0.5;
+        g *= m === 1 ? 1 + maskK : 1 - maskK * 0.5;
+        b *= m === 2 ? 1 + maskK : 1 - maskK * 0.5;
+      }
+
+      r *= scan; g *= scan; b *= scan;
+
+      if (stat > 0) {
+        const n = (hash(p * 0.7 + 3.1) - 0.5) * 255 * stat;
+        r += n; g += n; b += n;
+      }
+
+      const i = p * 4;
+      out[i] = clamp(r); out[i + 1] = clamp(g); out[i + 2] = clamp(b); out[i + 3] = data[i + 3];
+    }
+  }
+
+  // ── Phosphor glow — soft bloom, screen-blended, as CRT highlights halate ─
+  if (glowAmt > 0) {
+    const srcCanvas = document.createElement('canvas'); srcCanvas.width = w; srcCanvas.height = h;
+    srcCanvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(out), w, h), 0, 0);
+    const blurCanvas = document.createElement('canvas'); blurCanvas.width = w; blurCanvas.height = h;
+    const bCtx = blurCanvas.getContext('2d')!;
+    bCtx.filter = `blur(${2 + glowAmt * 6}px)`;
+    bCtx.drawImage(srcCanvas, 0, 0);
+    const blurred = bCtx.getImageData(0, 0, w, h).data;
+    const k = glowAmt * 0.6;
+    for (let i = 0; i < out.length; i += 4) {
+      // screen blend, scaled — lifts halation without flattening the image
+      out[i]     = clamp(255 - (255 - out[i])     * (255 - blurred[i]     * k) / 255);
+      out[i + 1] = clamp(255 - (255 - out[i + 1]) * (255 - blurred[i + 1] * k) / 255);
+      out[i + 2] = clamp(255 - (255 - out[i + 2]) * (255 - blurred[i + 2] * k) / 255);
+    }
+  }
+
+  const final = new Uint8ClampedArray(data.length);
+  for (let i = 0; i < data.length; i += 4) {
+    final[i]     = clamp(data[i]     + (out[i]     - data[i])     * amt);
+    final[i + 1] = clamp(data[i + 1] + (out[i + 1] - data[i + 1]) * amt);
+    final[i + 2] = clamp(data[i + 2] + (out[i + 2] - data[i + 2]) * amt);
+    final[i + 3] = data[i + 3];
+  }
+  return final;
+};
+
 // ─── RGB Channel Smear ───────────────────────────────────────────────────────
 
 const sortOneChannel = (
@@ -3099,6 +3438,21 @@ interface ProcessedImageProps {
   cmykSeparationEnabled: boolean;
   cmykDotSize: number;
   cmykSpacing: number;
+  newspaperEnabled: boolean;
+  newspaperStrength: number;
+  newspaperDotSize: number;
+  newspaperMisregister: number;
+  newspaperGrain: number;
+  newspaperVintage: number;
+  newspaperSaturation: number;
+  newspaperSoften: number;
+  newspaperTint: number;
+  vhsEnabled: boolean;
+  vhsStrength: number;
+  vhsScanlines: number;
+  vhsChromaBleed: number;
+  vhsTracking: number;
+  vhsGlow: number;
   silkscreenEnabled: boolean;
   silkscreenPaperColor: string;
   silkscreenInk1: string;
@@ -3183,6 +3537,9 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     ditherMatrixSize,
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    newspaperEnabled, newspaperStrength, newspaperDotSize, newspaperMisregister, newspaperGrain,
+    newspaperVintage, newspaperSaturation, newspaperSoften, newspaperTint,
+    vhsEnabled, vhsStrength, vhsScanlines, vhsChromaBleed, vhsTracking, vhsGlow,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
     bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
     postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
@@ -3344,9 +3701,13 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
           if (risoEnabled)         processed = applyRisoPrint(processed, w, h, risoScale, risoColor1, risoColor2, risoOffset, risoGrain);
           if (silkscreenEnabled)   processed = applySilkscreen(processed, w, h, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple);
           if (cmykSeparationEnabled) processed = applyCmykSeparation(processed, w, h, cmykDotSize, cmykSpacing);
+          if (newspaperEnabled && !lockedEffects.includes('newspaper')) processed = applyNewspaper(processed, w, h, newspaperStrength, newspaperDotSize, newspaperMisregister, newspaperGrain, newspaperVintage, newspaperSaturation, newspaperSoften, newspaperTint);
           if (halftoneEnabled)     processed = applyHalftonePixels(processed, w, h, halftonePattern ?? 'dot', halftoneDotSize, halftoneSpacing, halftoneAngle ?? 45, halftoneColor, halftoneOpacity ?? 1, halftoneInvert, halftoneDuotoneEnabled ?? false, halftoneBgColor ?? '#ebf2b5');
           if (postcardEnabled)     processed = applyPostcard(processed, w, h, postcardSaturation, postcardWarmth, postcardLevels, postcardScale);
           if (bloomEnabled)        processed = applyBloom(processed, w, h, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth);
+          // VHS is a display stage — it should sit over the finished image, as
+          // if whatever the stack produced were being played back on a CRT.
+          if (vhsEnabled && !lockedEffects.includes('vhs')) processed = applyVhs(processed, w, h, vhsStrength, vhsScanlines, vhsChromaBleed, vhsTracking, vhsGlow);
           if (canvasDitherStyle === 'ascii') {
             processed = applyAsciiDither(processed, w, h, ditherAsciiCharSize, ditherAsciiBrightness, ditherDuotoneEnabled, ditherDuotoneShadowColor, ditherDuotoneHighlightColor, ditherDuotoneInvert);
           } else if (canvasDitherStyle !== 'none') {
@@ -3400,9 +3761,22 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
     };
 
     render();
-    const ro = new ResizeObserver(render);
+    // Debounced — a window drag or Preview-in-Context toggle fires this many
+    // times a second, and re-running the full pipeline (Newspaper's per-plate
+    // dot loop especially) on every tick is what caused the Processing pill
+    // to flash repeatedly. Same fix as Effect Mask's paint-settle debounce,
+    // applied to resize instead of mouse-move.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(render, 200);
+    });
     ro.observe(wrap);
-    return () => { cancelled = true; ro.disconnect(); };
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrl, imageFlipH, imageFlipV, JSON.stringify(layers),
       edgeGlowEnabled, edgeGlowColor, edgeGlowIntensity, edgeGlowBloom, edgeGlowDarken,
@@ -3423,6 +3797,9 @@ const ProcessedImageCanvas: React.FC<ProcessedImageProps> = (props) => {
       ditherMatrixSize,
       risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
       cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    newspaperEnabled, newspaperStrength, newspaperDotSize, newspaperMisregister, newspaperGrain,
+    newspaperVintage, newspaperSaturation, newspaperSoften, newspaperTint,
+    vhsEnabled, vhsStrength, vhsScanlines, vhsChromaBleed, vhsTracking, vhsGlow,
       silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
       bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
     postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
@@ -3559,10 +3936,20 @@ const NoiseCanvas: React.FC<{ opacity: number; color: string }> = React.memo(({ 
     };
 
     generate();
-    // Regenerate if the canvas area resizes (e.g. panel open/close)
-    const ro = new ResizeObserver(generate);
+    // Regenerate if the canvas area resizes (e.g. panel open/close) — debounced
+    // for the same reason as ProcessedImageCanvas's own resize handling: a
+    // sidebar width transition fires this on nearly every animation frame,
+    // and this is a per-pixel Math.random() loop over the full canvas.
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver(() => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(generate, 200);
+    });
     ro.observe(wrap);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
   }, [color]);
 
   return (
@@ -3595,6 +3982,9 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     ditherMatrixSize,
     risoEnabled, risoScale, risoColor1, risoColor2, risoOffset, risoGrain,
     cmykSeparationEnabled, cmykDotSize, cmykSpacing,
+    newspaperEnabled, newspaperStrength, newspaperDotSize, newspaperMisregister, newspaperGrain,
+    newspaperVintage, newspaperSaturation, newspaperSoften, newspaperTint,
+    vhsEnabled, vhsStrength, vhsScanlines, vhsChromaBleed, vhsTracking, vhsGlow,
     silkscreenEnabled, silkscreenPaperColor, silkscreenInk1, silkscreenInk2, silkscreenInk3, silkscreenKeyThreshold, silkscreenStipple,
     bloomEnabled, bloomThreshold, bloomIntensity, bloomRadius, bloomWarmth,
     postcardEnabled, postcardSaturation, postcardWarmth, postcardLevels, postcardScale,
@@ -3661,8 +4051,9 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
     (colorGradeEnabled ?? false) || (dispersionEnabled ?? false) ||
     (warpEnabled ?? false) || (channelSmearEnabled ?? false) || (pixelSortEnabled ?? false) ||
     (motionBlurEnabled ?? false) || (spotBlurEnabled ?? false) || (liquidGlassEnabled ?? false) ||
-    (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (halftoneEnabled ?? false) ||
-    (silkscreenEnabled ?? false) || (postcardEnabled ?? false) || (bloomEnabled ?? false)
+    (risoEnabled ?? false) || (cmykSeparationEnabled ?? false) || (newspaperEnabled ?? false) || (halftoneEnabled ?? false) ||
+    (silkscreenEnabled ?? false) || (postcardEnabled ?? false) || (bloomEnabled ?? false) ||
+    (vhsEnabled ?? false)
   );
 
   const hasSource = !!(imageUrl || videoUrl);
@@ -3782,6 +4173,21 @@ const Canvas: React.FC<CanvasProps> = ({ state, hideEffects = false, onProcessin
                 cmykSeparationEnabled={cmykSeparationEnabled ?? false}
                 cmykDotSize={cmykDotSize ?? 4}
                 cmykSpacing={cmykSpacing ?? 8}
+                newspaperEnabled={newspaperEnabled ?? false}
+                newspaperStrength={newspaperStrength ?? 100}
+                newspaperDotSize={newspaperDotSize ?? 3}
+                newspaperMisregister={newspaperMisregister ?? 1.2}
+                newspaperGrain={newspaperGrain ?? 35}
+                newspaperVintage={newspaperVintage ?? 45}
+                newspaperSaturation={newspaperSaturation ?? 115}
+                newspaperSoften={newspaperSoften ?? 25}
+                newspaperTint={newspaperTint ?? 50}
+                vhsEnabled={vhsEnabled ?? false}
+                vhsStrength={vhsStrength ?? 100}
+                vhsScanlines={vhsScanlines ?? 45}
+                vhsChromaBleed={vhsChromaBleed ?? 50}
+                vhsTracking={vhsTracking ?? 25}
+                vhsGlow={vhsGlow ?? 35}
                 silkscreenEnabled={silkscreenEnabled ?? false}
                 silkscreenPaperColor={silkscreenPaperColor ?? '#e6dcb1'}
                 silkscreenInk1={silkscreenInk1 ?? '#1e50c8'}

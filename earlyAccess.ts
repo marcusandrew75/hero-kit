@@ -5,6 +5,7 @@
 // just let the date pass — nothing else needs to change).
 export const EARLY_ACCESS: Record<string, string> = {
   sumie: '2026-08-15',
+  newspaper: '2026-08-15',
 };
 
 export function isEarlyAccessLocked(effectId: string, pro: boolean): boolean {

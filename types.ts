@@ -261,6 +261,29 @@ export interface BackgroundState {
   cmykDotSize: number;   // 1–12
   cmykSpacing: number;   // 3–30
 
+  // Newspaper — full-color halftone dot screen on warm newsprint paper, with
+  // a small fixed-direction per-channel misregistration (press-slip fringe)
+  // and paper grain. Keeps the photo's own real color per dot, unlike CMYK
+  // Separation's fixed 4-process-ink plates.
+  newspaperEnabled: boolean;
+  newspaperStrength: number;     // 0–100, blend over the original
+  newspaperDotSize: number;      // 1–10, halftone screen dot size
+  newspaperMisregister: number;  // 0–4, per-channel offset in px (press fringe)
+  newspaperGrain: number;        // 0–100, paper grain intensity
+  newspaperVintage: number;      // 0–100, fresh bright stock → creamy aged newsprint
+  newspaperSaturation: number;   // 0–200, ink vividness (100 = as separated)
+  newspaperSoften: number;       // 0–100, ink-bleed softness — kept subtle (≤ ~1.8px blur)
+  newspaperTint: number;         // 0–100, ageing cast lean — 0 yellow/sepia, 100 olive-green, 50 = default calibration
+
+  // VHS — composite tape playback (chroma bleed, tracking tears, static) then
+  // CRT display (scanlines, phosphor triads, glow).
+  vhsEnabled: boolean;
+  vhsStrength: number;     // 0–100, blend over the original
+  vhsScanlines: number;    // 0–100, scanline depth + phosphor triad mask
+  vhsChromaBleed: number;  // 0–100, horizontal colour smear/lag
+  vhsTracking: number;     // 0–100, tape weave, dropout tears and static
+  vhsGlow: number;         // 0–100, CRT phosphor halation
+
   // Image layers (composited on top of primary imageUrl)
   layers: ImageLayer[];
 

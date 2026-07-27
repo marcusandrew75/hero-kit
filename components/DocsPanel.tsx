@@ -131,6 +131,13 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.9', date: '25 Jul 2026',
+    items: [
+      'Added: Newspaper — a real four-plate press simulation (C/M/Y/K, each screened at its own classic angle) on warm newsprint, with plate misregistration for the colour-fringed print look, an ink-bleed Soften, paper Grain, and a Vintage control that ages the stock and cast without brightening the image, with a Tint knob to lean the ageing yellow/sepia or olive-green. Joins the Print & Halftone family and the Dice pool',
+      'Fixed: resizing the canvas area (sidebar open/close, Preview in Context) was re-running the full effect pipeline and film grain on every animation frame instead of once — most visible as a repeatedly-flashing "Processing…" pill on heavier effects like Newspaper. Both now wait for the resize to settle before recomputing, same fix as Effect Mask\'s paint-settle debounce',
+    ],
+  },
+  {
     version: '4.8', date: '24 Jul 2026',
     items: [
       'Added: Sumi-e (墨絵) — Japanese ink-wash painting. Maps the photo to black ink over warm washi paper, bleeding mid-tones into soft washes with ink pooling along edges and a dry-brush paper grain. Four controls (Strength, Ink, Bleed, Texture); best on landscapes, mist and simple tonal scenes. Joins the Structure & Form family and the Dice pool',

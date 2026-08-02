@@ -1,12 +1,12 @@
 // ─── Pro early access ───────────────────────────────────────────────────────
-// New effects launch Pro-only, then graduate to free for everyone on the
-// listed date. To ship a new effect this way: add its dice.ts id here with a
-// graduation date. To make an effect free immediately, delete its entry (or
-// just let the date pass — nothing else needs to change).
-export const EARLY_ACCESS: Record<string, string> = {
-  sumie: '2026-08-15',
-  newspaper: '2026-08-15',
-};
+// Effect gating retired 27 Jul 2026 — all effects are free for everyone, no
+// exceptions. This map and the three enforcement points it feeds (RightPanel's
+// locked badge, dice.ts's pool filter, Canvas.tsx's render backstop) are left
+// in place, dormant, in case a future launch wants the same early-access
+// pattern again. To gate an effect: add its dice.ts id here with a graduation
+// date. To make an effect free immediately, delete its entry (or let the date
+// pass) — nothing else needs to change.
+export const EARLY_ACCESS: Record<string, string> = {};
 
 export function isEarlyAccessLocked(effectId: string, pro: boolean): boolean {
   if (pro) return false;

@@ -131,6 +131,12 @@ interface ChangeEntry { version: string; date: string; items: string[]; }
 
 const CHANGELOG: ChangeEntry[] = [
   {
+    version: '4.10', date: '2 Aug 2026',
+    items: [
+      'Changed: every effect is now free for everyone, with no Pro gate — Sumi-e and Newspaper were the only two ever behind early access, and both are unlocked immediately rather than waiting out their original graduation date. Pro is now purely about export: 2×/4× resolution, WebP, and unlimited saved Looks',
+    ],
+  },
+  {
     version: '4.9', date: '25 Jul 2026',
     items: [
       'Added: Newspaper — a real four-plate press simulation (C/M/Y/K, each screened at its own classic angle) on warm newsprint, with plate misregistration for the colour-fringed print look, an ink-bleed Soften, paper Grain, and a Vintage control that ages the stock and cast without brightening the image, with a Tint knob to lean the ageing yellow/sepia or olive-green. Joins the Print & Halftone family and the Dice pool',

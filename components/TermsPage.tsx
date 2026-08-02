@@ -63,8 +63,8 @@ const TermsPage: React.FC = () => {
 
         <Section heading="Pro accounts and billing">
           <p>
-            Pro unlocks early access to new effects, higher-resolution export (2× and 4×), WebP export, and unlimited
-            saved Looks, for a single one-time payment of $29, processed by Stripe. It's a one-time purchase — there's no subscription, no recurring charge, and
+            Every effect is free for everyone — Pro unlocks higher-resolution export (2× and 4×), WebP export, and
+            unlimited saved Looks, for a single one-time payment of $29, processed by Stripe. It's a one-time purchase — there's no subscription, no recurring charge, and
             no expiry. You pay once and keep Pro.
           </p>
           <p>

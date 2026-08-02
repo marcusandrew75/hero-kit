@@ -56,7 +56,6 @@ const GoogleG: React.FC = () => (
 );
 
 const FEATURES: { icon: string; title: string; body: string }[] = [
-  { icon: 'ph-sparkle',         title: 'New effects first', body: 'Every new effect lands in Pro first — yours before it reaches the free tier.' },
   { icon: 'ph-arrows-out',      title: '4K & 8K export',    body: 'Crisp, retina-ready heroes at up to 8K — free tops out at 1080p.' },
   { icon: 'ph-file-image',      title: 'WebP export',       body: 'Modern, high-quality format at a fraction of a PNG’s size.' },
   { icon: 'ph-bookmark-simple', title: 'Unlimited Looks',   body: 'Save as many Looks as you like — the free plan stops at three.' },
@@ -263,10 +262,10 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
               </div>
               <p className="text-[10px] font-semibold tracking-[0.22em] mb-2" style={{ ...MONO, color: T.accent }}>HEROKIT PRO</p>
               <h2 className="text-[23px] font-bold leading-tight mb-2" style={{ ...GROTESK, color: T.text }}>
-                Unlock the full kit
+                Export like a Pro
               </h2>
               <p className="text-[13px] leading-relaxed max-w-[300px]" style={{ color: T.muted }}>
-                One upgrade unlocks it all.<br />No subscription. No catch.
+                Every effect is free, always.<br />Pro is for exporting it at full resolution.
               </p>
             </div>
 

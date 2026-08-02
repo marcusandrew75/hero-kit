@@ -262,10 +262,10 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
               </div>
               <p className="text-[10px] font-semibold tracking-[0.22em] mb-2" style={{ ...MONO, color: T.accent }}>HEROKIT PRO</p>
               <h2 className="text-[23px] font-bold leading-tight mb-2" style={{ ...GROTESK, color: T.text }}>
-                Export like a Pro
+                Ready to go Pro?
               </h2>
               <p className="text-[13px] leading-relaxed max-w-[300px]" style={{ color: T.muted }}>
-                Every effect is free, always.<br />Pro is for exporting it at full resolution.
+                Every effect is free, always.<br />Pro adds 4K/8K, WebP, and unlimited Looks.
               </p>
             </div>
 

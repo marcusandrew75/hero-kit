@@ -179,9 +179,6 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
     onClose();
   };
 
-  const showProgress = step === 'showcase' || step === 'auth' || step === 'payment';
-  const progressIdx = step === 'showcase' ? 0 : step === 'auth' ? 1 : 2;
-
   // ── Reusable bits ──────────────────────────────────────────────────────────
   const BackButton = ({ to }: { to: Step }) => (
     <button onClick={() => setStep(to)} title="Back"
@@ -228,25 +225,15 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
           scrollbarWidth: 'none',
         }}
       >
-        {/* Header — logo + progress + control */}
+        {/* Header — back (auth/payment) + control. The orange logomark + HEROKIT
+            PRO label in the showcase body below is the only brand mark now —
+            this bar stays empty on the left there rather than repeating it. */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           {step === 'auth'
             ? <BackButton to="showcase" />
             : step === 'payment'
               ? <BackButton to={user ? 'showcase' : 'auth'} />
-              : <div className="flex items-center gap-2">
-                  <img src="/herokit_logomark_dark.png" alt="" className="w-5 h-5 object-contain" />
-                  <span className="text-[13px] font-bold tracking-wide" style={{ color: T.text }}>HeroKit</span>
-                </div>}
-
-          {showProgress && (
-            <div className="flex items-center gap-1.5">
-              {[0, 1, 2].map(i => (
-                <div key={i} className="h-1 rounded-full transition-all duration-300"
-                  style={{ width: i === progressIdx ? 18 : 6, background: i <= progressIdx ? T.accent : T.border }} />
-              ))}
-            </div>
-          )}
+              : <div />}
 
           <CloseButton />
         </div>
@@ -265,7 +252,7 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
                 Ready to go Pro?
               </h2>
               <p className="text-[13px] leading-relaxed max-w-[300px]" style={{ color: T.muted }}>
-                Every effect is free, always.<br />Pro adds 4K/8K, WebP, and unlimited Looks.
+                Every effect is free, always.<br />Pro adds 4K/8K, WebP export, and unlimited Looks.
               </p>
             </div>
 

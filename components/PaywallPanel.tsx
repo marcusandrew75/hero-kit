@@ -252,7 +252,7 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
                 Ready to go Pro?
               </h2>
               <p className="text-[13px] leading-relaxed max-w-[300px]" style={{ color: T.muted }}>
-                Every effect is free, always.<br />Pro adds 4K/8K, WebP export, and unlimited Looks.
+                Every effect is free, always.<br />Pro adds 4K/8K, WebP export,<br />and unlimited Looks.
               </p>
             </div>
 

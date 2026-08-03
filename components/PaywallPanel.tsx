@@ -289,7 +289,7 @@ const PaywallPanel: React.FC<PaywallPanelProps> = ({ open, onClose, user, entitl
 
             <div className="flex flex-col items-center mb-4">
               <span className="text-[38px] font-bold leading-none" style={{ ...GROTESK, color: T.text }}>{PRICE_LABEL}</span>
-              <span className="text-[12px] font-medium mt-1.5" style={{ color: T.dim }}>One-Time Payment · Free Forever</span>
+              <span className="text-[12px] font-medium mt-1.5" style={{ color: T.dim }}>One-Time Payment</span>
             </div>
 
             <button onClick={goToCheckout} className="hw-cta">
